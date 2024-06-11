@@ -2,9 +2,14 @@
 
 [Try Demo Here](https://huggingface.co/spaces/Ashoka74/UFOSINT)
 
-<h3>Parsing, Filtering and Querying</h3>
 
-[!Watch Tutorial](https://www.youtube.com/watch?v=AaNEORiyyA8&ab_channel=CogniTechStudios)
+https://github.com/Ashoka74/UAP_Analysis_Tool/assets/40150735/a122d9da-e9e0-4475-8a0e-63d7f6e04785
+
+<h3>Parsing, Filtering and Querying</h3>
+<video width="600" controls>
+  <source src="https://youtu.be/AaNEORiyyA8?si=w-4TFW-vvccnH7uD" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 
 ![Parsing, Filtering and Querying](UFO_APP_SCREENSHOT.png?raw=true "Parsing, Filtering and Querying")
