@@ -1,8 +1,12 @@
 <h1>UAP Cases Analysis Tool</h1>
 
-<a href="https://huggingface.co/spaces/Ashoka74/UFOSINT"><img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-xl-dark.svg" alt="Open in Spaces"></a>
+[![Try Demo](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-xl-dark.svg)](https://huggingface.co/spaces/Ashoka74/UFOSINT)
 
 <h3>Parsing, Filtering and Querying</h3>
+
+<video width="320" height="240" controls>
+  <source src="features_parsing.mp4" type="video/mp4">
+</video>
 
 ![Parsing, Filtering and Querying](UFO_APP_SCREENSHOT.png?raw=true "Parsing, Filtering and Querying")
 </br>
