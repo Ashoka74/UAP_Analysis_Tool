@@ -1,6 +1,6 @@
 <h1>UAP Cases Analysis Tool</h1>
 
-[![Try Demo Here](https://huggingface.co/spaces/Ashoka74/UFOSINT)
+![Try Demo Here](https://huggingface.co/spaces/Ashoka74/UFOSINT)
 
 <h3>Parsing, Filtering and Querying</h3>
 
