@@ -4,9 +4,8 @@
 
 <h3>Parsing, Filtering and Querying</h3>
 
-<video width="320" height="240" controls>
-  <source src="https://raw.githubusercontent.com/Ashoka74/UAP_Analysis_Tool/master/features_parsing.mp4" type="video/mp4">
-</video>
+[!Watch Tutorial](https://www.youtube.com/watch?v=AaNEORiyyA8&ab_channel=CogniTechStudios)
+
 
 ![Parsing, Filtering and Querying](UFO_APP_SCREENSHOT.png?raw=true "Parsing, Filtering and Querying")
 </br>
