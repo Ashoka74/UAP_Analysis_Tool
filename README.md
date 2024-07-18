@@ -2,21 +2,35 @@
 
 [Try Demo Here](https://huggingface.co/spaces/Ashoka74/UFOSINT)
 
+<h3>Parsing, Filtering and Querying</h3>
 
 https://github.com/Ashoka74/UAP_Analysis_Tool/assets/40150735/a122d9da-e9e0-4475-8a0e-63d7f6e04785
 
-<h3>Parsing, Filtering and Querying</h3>
+
+
 <video width="600" controls>
   <source src="https://youtu.be/AaNEORiyyA8?si=w-4TFW-vvccnH7uD" type="video/mp4">
   Your browser does not support the video tag.
 </video>
 
-![Dynamic Map](map.png?eaw=true "Dynamic Map")
+<h3> Dynamic Maps </h3>
+
+![Dynamic Map](IMG-20240718-WA0000.jpg?raw=true "Dynamic Map")
+
+<h3> AI Summaries </h3>
 
 ![Parsing, Filtering and Querying](UFO_APP_SCREENSHOT.png?raw=true "Parsing, Filtering and Querying")
 
-![Dynamic Visualizations](cat_screenshot.png?raw=true "Dynamic Visualizations")
+<h3> Dynamic Charts </h3>
+
+![Dynamic Visualizations](IMG-20240718-WA0003.jpg?raw=true "Dynamic Visualizations")
 </br>
+
+<h3> Semantic Search </h3>
+
+![SemSearch](IMG-20240718-WA0001.jpg?raw=true "Semantic Search")
+
+
 <h3>Variable Correlations</h3>
 
 ![Variable Correlations](corr_grouped_features.png?raw=true "Correlation of Variables")</br>
