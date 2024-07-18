@@ -11,8 +11,11 @@ https://github.com/Ashoka74/UAP_Analysis_Tool/assets/40150735/a122d9da-e9e0-4475
   Your browser does not support the video tag.
 </video>
 
+![Dynamic Map](map.png?eaw=true "Dynamic Map")
 
 ![Parsing, Filtering and Querying](UFO_APP_SCREENSHOT.png?raw=true "Parsing, Filtering and Querying")
+
+![Dynamic Visualizations](cat_screenshot.png?raw=true "Dynamic Visualizations")
 </br>
 <h3>Variable Correlations</h3>
 
