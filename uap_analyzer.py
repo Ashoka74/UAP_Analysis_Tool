@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from sentence_transformers import SentenceTransformer
 import torch
 with torch.no_grad():
-    embed_model = SentenceTransformer('embaas/sentence-transformers-e5-large-v2')
+    embed_model = SentenceTransformer('all-mpnet-base-v2')
     embed_model.to('cuda')
 from sentence_transformers.util import pytorch_cos_sim, pairwise_cos_sim
 #from stqdm.notebook import stqdm
