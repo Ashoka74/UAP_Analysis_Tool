@@ -3,7 +3,8 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import umap
-import hdbscan
+# import hdbscan
+import fast_hdbscan as hdbscan
 import plotly.graph_objects as go
 from sentence_transformers import SentenceTransformer
 import torch
