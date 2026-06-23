@@ -1,0 +1,3900 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Unified UAP/UFO sighting schema derived from empirical analysis of all 18 active dataset folders. Categorical enums drawn from actual observed values. Last analysed: 2026-05-13.",
+  "datasets": {
+    "NUFORC": {
+      "$comment": "US National UFO Reporting Center — ~70,000 global civilian reports up to 2023-03. Folder: (US) NUFORC. Primary file: NUFORC 2023.03.csv (CSV, EN, ~60 MB).",
+      "rowCount": "~70000",
+      "primaryKey": "id",
+      "format": "CSV",
+      "language": "EN",
+      "columns": {
+        "id": {
+          "type": "string",
+          "description": "Unique NUFORC case ID (e.g. 'S177105')",
+          "pattern": "^S[0-9]+$"
+        },
+        "city": {
+          "type": "string",
+          "description": "City / town of the sighting (uppercase free-text)"
+        },
+        "district": {
+          "type": "string",
+          "description": "State, province or region (uppercase free-text)"
+        },
+        "country": {
+          "type": "string",
+          "description": "ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB', 'ID')"
+        },
+        "water": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Associated water body (sparse)"
+        },
+        "other": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Additional location qualifier (sparse)"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime of sighting (e.g. '2023-07-29 17:45:00')"
+        },
+        "date_detail": {
+          "type": "string",
+          "description": "Human-readable date/time as submitted (e.g. '07/29/23 5:45 PM')"
+        },
+        "description": {
+          "type": "string",
+          "description": "Full free-text witness narrative"
+        }
+      }
+    },
+    "BLUE_BOOK": {
+      "$comment": "US Air Force Project Blue Book (1947-1969) — split across two CSV files: bluebook1.csv (~10,000 rows) and bluebook2.csv (~5,000 rows). Folder: (US) BLUE BOOK. Schema is identical; Result vocab slightly narrower in file 2.",
+      "rowCount": "~15000",
+      "primaryKey": ".Case ID",
+      "format": "CSV",
+      "language": "EN",
+      "columns": {
+        ".Case ID": {
+          "type": "string",
+          "description": "Blue Book case identifier (e.g. 'BB-8371')",
+          "pattern": "^BB-[0-9]+$"
+        },
+        ".Date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Date of the sighting (sparse; various formats)"
+        },
+        ".Location": {
+          "type": "string",
+          "description": "Free-text location (City, State or country)"
+        },
+        ".State": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "US state abbreviation (e.g. 'NY', 'CA') or null for non-US"
+        },
+        ".Country": {
+          "type": "string",
+          "description": "Country code or continental/regional designation",
+          "enum": [
+            "US",
+            "EU",
+            "P",
+            "AS",
+            "CN",
+            "A",
+            "CA",
+            "SA",
+            "AF",
+            "AU",
+            "ME",
+            "JP",
+            "GB",
+            "M",
+            "OC",
+            "AN",
+            null
+          ]
+        },
+        ".Incident": {
+          "type": "string",
+          "description": "Free-text summary of the incident"
+        },
+        ".Special Comments": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Investigator annotations (sparse)"
+        },
+        ".Shape": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Observed shape of the object (~406 raw unique values in file 1; major examples listed)",
+          "examples": [
+            "Disc",
+            "Cigar",
+            "Light",
+            "Round",
+            "Ball",
+            "DomeDisc",
+            "Ovoid",
+            "Lights",
+            "Circular",
+            "Fireball",
+            "Oval",
+            "Cylinder",
+            "Sphere",
+            "Triangle"
+          ]
+        },
+        ".Size (Meters)": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Estimated physical size in metres (sparse)"
+        },
+        ".Result": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Official investigation conclusion",
+          "enum": [
+            "Meteor",
+            "Aircraft",
+            "Balloon",
+            "Star",
+            "Venus",
+            "Satellite",
+            "Reflection",
+            "Debris",
+            "Mars",
+            "Mirage",
+            "Rocket",
+            "Hoax",
+            "Jupiter",
+            "Flare",
+            "Re-entry",
+            "Unidentified",
+            "Insufficient Data",
+            "Unknown",
+            "Psychological",
+            "Natural",
+            "Moon",
+            "Radar",
+            "Light",
+            "Psych",
+            "Astronomical",
+            "Debris",
+            "Other",
+            null
+          ]
+        }
+      }
+    },
+    "UK_NATIONAL_ARCHIVES": {
+      "$comment": "UK Ministry of Defence / National Archives catalogue of UAP reports (1978–2000), 2,827 entries sourced from released DEFE records. Folder: (UK) NATIONAL ARCHIVES CATALOGUE. Primary file: uk.csv.",
+      "rowCount": "~2827",
+      "primaryKey": ".Catalog Entry",
+      "format": "CSV",
+      "language": "EN",
+      "columns": {
+        ".Date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date of sighting (YYYY-MM-DD; ~1,681 unique dates)"
+        },
+        ".Catalog Entry": {
+          "type": "string",
+          "description": "UK National Archives DEFE reference (e.g. 'DEFE-24-1939-13')"
+        },
+        ".Location": {
+          "type": "string",
+          "description": "Free-text city, county and country (e.g. 'Laughton, Sheffield, UK')"
+        },
+        ".Summary Description": {
+          "type": "string",
+          "description": "Free-text summary of the sighting as filed by the MoD"
+        },
+        ".Shape": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Observed shape (free-text, ~936 unique values; major: light, lights, round, unk, circular, star, triangular, cigar, oval, saucer, ball, disc, sphere)",
+          "examples": [
+            "light",
+            "lights",
+            "round",
+            "unk",
+            "circular",
+            "star",
+            "triangular",
+            "cigar",
+            "oval",
+            "saucer",
+            "ball",
+            "disc",
+            "sphere",
+            "oblong"
+          ]
+        },
+        ".Size": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Estimated size descriptor (sparse free-text; major: null/unk, large, small, very large)",
+          "examples": [
+            "unk",
+            "large",
+            "small",
+            "very large",
+            "aircraft size",
+            "football",
+            "moon",
+            null
+          ]
+        },
+        ".Special Comments": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Supplementary MoD analyst notes, identification attempts and cross-references (sparse)"
+        }
+      }
+    },
+    "COBEPS_NOTIFICATIONS_PAN": {
+      "$comment": "COBEPS (Belgium) official PAN notification database — 1,308 reports up to 31 Dec 2023. Folder: (BE) COBEPS. Primary file: NOTIFICATIONS PAN (Belgique) 31_12_2023.csv (tab-delimited, Latin-1, FR headers).",
+      "rowCount": "~1308",
+      "primaryKey": "NO",
+      "format": "TSV",
+      "language": "FR",
+      "columns": {
+        "NO": {
+          "type": "integer",
+          "description": "Sequential record number"
+        },
+        "N°Cobeps": {
+          "type": "string",
+          "description": "Internal COBEPS case reference"
+        },
+        "DatEnc": {
+          "type": "integer",
+          "description": "Year of data entry"
+        },
+        "Encodeur": {
+          "type": "string",
+          "description": "Name of the data encoder"
+        },
+        "CommAn": {
+          "type": "integer",
+          "description": "Year report was received by COBEPS",
+          "enum": [
+            2006,
+            2007,
+            2008,
+            2009,
+            2010,
+            2011,
+            2012,
+            2013,
+            2014,
+            2015,
+            2016,
+            2017,
+            2018,
+            2019,
+            2020,
+            2021,
+            2022,
+            2023
+          ]
+        },
+        "Origininfo": {
+          "type": "string",
+          "description": "Channel through which report was received",
+          "enum": [
+            "COBEPS",
+            "Forum/blog internet étranger",
+            "REUB",
+            "MUFON",
+            "Presse/TV/radio",
+            "ovni-ufologie.com",
+            "Les ovnis Forum ufologique",
+            "Belgisch UFO-Meldpunt",
+            "SOS-OVNI",
+            "AREPS",
+            "Forum/blog internet belge",
+            "GERU"
+          ]
+        },
+        "ExactMom": {
+          "type": "string",
+          "description": "Whether observation time is exact",
+          "enum": [
+            "TRUE",
+            "FALSE"
+          ]
+        },
+        "J/N/C": {
+          "type": "string",
+          "description": "Day/Night/Twilight at time of observation",
+          "enum": [
+            "J",
+            "N",
+            "C"
+          ]
+        },
+        "AnObs": {
+          "type": "integer",
+          "description": "Year of observation"
+        },
+        "MoisObs": {
+          "type": "integer",
+          "description": "Month of observation (1–12)"
+        },
+        "JourObs": {
+          "type": "integer",
+          "description": "Day of month of observation (1–31)"
+        },
+        "JourSem": {
+          "type": "integer",
+          "description": "Day of week (1=Mon…7=Sun)"
+        },
+        "HeurObs": {
+          "type": "integer",
+          "description": "Hour of observation (0–24)"
+        },
+        "DecaGMT": {
+          "type": "integer",
+          "description": "UTC offset in hours",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "GMT": {
+          "type": "string",
+          "description": "UTC time of sighting (HH:MM)"
+        },
+        "Duree": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Duration in minutes"
+        },
+        "Secondes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Duration in seconds"
+        },
+        "Multi": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Multi-event flag (0=no, 1=yes)",
+          "enum": [
+            0,
+            1,
+            "??"
+          ]
+        },
+        "NbTem": {
+          "type": "integer",
+          "description": "Number of witnesses (1–10+)"
+        },
+        "Lieu": {
+          "type": "string",
+          "description": "Locality name"
+        },
+        "CP": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Belgian postal code"
+        },
+        "Nuts2": {
+          "type": "string",
+          "description": "Belgian NUTS-2 province",
+          "enum": [
+            "Hainaut",
+            "Liège",
+            "Namur",
+            "Brabant Wallon",
+            "Bruxelles",
+            "Luxembourg",
+            "Vlaams-Brabant",
+            "West-Vlaanderen",
+            "Oost-Vlaanderen",
+            "Antwerpen",
+            "Limburg"
+          ]
+        },
+        "Lat": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Latitude (decimal degrees WGS-84)"
+        },
+        "Long": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Longitude (decimal degrees WGS-84)"
+        },
+        "EnMouv": {
+          "type": "integer",
+          "description": "Witness in motion (0=stationary, 1=moving)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Source": {
+          "type": "integer",
+          "description": "Source quality (1=direct, 2=secondary, 3=press/media)",
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "Texte": {
+          "type": "string",
+          "description": "Free-text case narrative"
+        },
+        "NbPhe": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Number of phenomena/objects observed"
+        },
+        "Dessinable": {
+          "type": "integer",
+          "description": "Phenomenon describable enough to sketch (0=no, 1=yes)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Symetrie": {
+          "type": "string",
+          "description": "Symmetry code (Fx=frontal, Sx=sagittal; digit=planes of symmetry)",
+          "examples": [
+            "F0",
+            "S1",
+            "S3",
+            "F1",
+            "S0",
+            "S4",
+            "F3",
+            "F5"
+          ]
+        },
+        "CouleurUni": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Dominant single colour (free-text)"
+        },
+        "CouleurForm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Secondary/form colour (free-text)"
+        },
+        "Bruit": {
+          "type": "integer",
+          "description": "Sound reported (0=no, 1=yes)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Deplacement": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Movement pattern of the phenomenon",
+          "enum": [
+            "Rectiligne ou courbe mais continu",
+            "Immobile",
+            "Complexe: plusieurs types de mouvements différents",
+            "Immobile puis en mouvement rectiligne",
+            "Changements brutaux de direction et/ou de vitesse",
+            "Rectiligne ou en larges courbes",
+            "Globalement rectiligne mais saccades et/ou légères variations de vitesse",
+            "Complexe et difficilement descriptible",
+            "1 à 3 changements importants de directions et de vitesses",
+            "Sacades et légères variations de vitesse",
+            null
+          ]
+        },
+        "AzimutDeb": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Starting azimuth in degrees (0–360)"
+        },
+        "ElevDeb": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Starting elevation angle in degrees (0–90)"
+        },
+        "AzimutFin": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ending azimuth in degrees"
+        },
+        "ElevFin": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ending elevation angle in degrees"
+        },
+        "Photo": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Number of photos (0 if none)"
+        },
+        "Video": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Number of video recordings (0 if none)"
+        },
+        "Trace": {
+          "type": "integer",
+          "description": "Physical trace left (0=no, 1=yes)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "OrganTrait": {
+          "type": "string",
+          "description": "Organisation that processed the case",
+          "enum": [
+            "COBEPS",
+            "REUB",
+            "MUFON",
+            "ovni-ufologie.com",
+            "Belgisch UFO-Meldpunt",
+            "SOS-OVNI",
+            "ORIGINE",
+            "Forum/blog internet étranger",
+            "Forum/blog internet belge",
+            "GERU"
+          ]
+        },
+        "EtapEnq": {
+          "type": "string",
+          "description": "Investigation stage",
+          "enum": [
+            "Enquête achevée",
+            "Clôturé sans enquête",
+            "Pas d'information",
+            "Evaluation en cours",
+            "Enquête en cours"
+          ]
+        },
+        "Rapport": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Report type produced",
+          "enum": [
+            "FI",
+            "RDE",
+            "CRE",
+            null
+          ]
+        },
+        "GEIPAN": {
+          "type": "string",
+          "description": "GEIPAN/PAN classification (a=identified, b=probably identified, c=insufficient data, d=unidentified, x=unclassified, ec=under investigation)",
+          "enum": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "x",
+            "ec"
+          ]
+        },
+        "Hynek": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Hynek classification",
+          "enum": [
+            "LN",
+            "DD",
+            "RR1",
+            "RR2",
+            "RR3",
+            "RR4",
+            "PS",
+            null
+          ]
+        },
+        "TypeIdent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Identified explanation category",
+          "enum": [
+            "Aérostat",
+            "Aérodyne",
+            "Astronautique",
+            "Astronomique",
+            "Rentrée atmosphérique",
+            "Projection lumineuse",
+            "Animaux volants",
+            "Eclairage",
+            "Psychologique",
+            "Projectiles lumineux",
+            null
+          ]
+        },
+        "AltitPhen": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Altitude layer of the phenomenon",
+          "enum": [
+            "0 Sol",
+            "1 Basses couches",
+            "2 Troposphère",
+            "3 Stratosphère",
+            "4 Mésosphère",
+            "5 Thermosphere",
+            "6 Exosphère",
+            "8 Spatiale",
+            null
+          ]
+        },
+        "AvisTem": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Witness confidence in own report (0=uncertain, 1=confident)",
+          "enum": [
+            0,
+            1,
+            null
+          ]
+        }
+      }
+    },
+    "COBEPS_COB_2021": {
+      "$comment": "COBEPS — COB Online historical catalogue (pre-2021), 2,111 Belgian cases. Folder: (BE) COBEPS. Primary file: COB_2021 - COB Online.csv (CSV, FR headers).",
+      "rowCount": "~2111",
+      "primaryKey": "CodeCOB",
+      "format": "CSV",
+      "language": "FR",
+      "columns": {
+        "CodeCOB": {
+          "type": "string",
+          "description": "Unique COB case code"
+        },
+        "Lien_PDF": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL to associated PDF report"
+        },
+        "Date Encodage": {
+          "type": "string",
+          "description": "Date the case was encoded"
+        },
+        "CP": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Belgian postal code"
+        },
+        "Lieu": {
+          "type": "string",
+          "description": "Locality of the sighting"
+        },
+        "Province": {
+          "type": "string",
+          "description": "Belgian province",
+          "enum": [
+            "Hainaut",
+            "Bruxelles",
+            "Liège",
+            "Namur",
+            "West-Vlaanderen",
+            "Antwerpen",
+            "Vlaams-Brabant",
+            "Luxembourg",
+            "Brabant Wallon",
+            "Oost-Vlaanderen",
+            "Limburg"
+          ]
+        },
+        "Long": {
+          "type": "number",
+          "description": "Longitude (decimal degrees)"
+        },
+        "Lat": {
+          "type": "number",
+          "description": "Latitude (decimal degrees)"
+        },
+        "Date_p": {
+          "type": "string",
+          "description": "Primary (earliest) date of observation"
+        },
+        "Heure_p": {
+          "type": "string",
+          "description": "Primary time of observation (HH:MM)"
+        },
+        "Imp_heure": {
+          "type": "integer",
+          "description": "Time imprecision flag (0=exact, 1=approximate)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Decalage": {
+          "type": "string",
+          "description": "UTC offset string",
+          "enum": [
+            "00:00",
+            "01:00",
+            "02:00"
+          ]
+        },
+        "J/N/C": {
+          "type": "string",
+          "description": "Day/Night/Twilight/Dawn",
+          "enum": [
+            "J",
+            "N",
+            "C",
+            "D"
+          ]
+        },
+        "RD1": {
+          "type": "integer",
+          "description": "Data reliability flag (0=lower, 1=higher)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Nb_temoins": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Number of witnesses (integer or '>1')"
+        },
+        "TM": {
+          "type": "integer",
+          "description": "Multiple-witness flag (0=single, 1=multiple)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Etat_Ciel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Sky condition at time of sighting",
+          "enum": [
+            "Dégagé",
+            "Nuageux",
+            "Couvert",
+            "Dégagé>Couvert",
+            null
+          ]
+        },
+        "Description": {
+          "type": "string",
+          "description": "Free-text narrative of the sighting"
+        },
+        "Mob": {
+          "type": "integer",
+          "description": "Witness was mobile (0=stationary, 1=moving)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Nb_P": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Number of objects/phenomena"
+        },
+        "Apparence": {
+          "type": "string",
+          "description": "Primary phenomenological appearance",
+          "enum": [
+            "Forme",
+            "Lumière",
+            "Ligne",
+            "Pt"
+          ]
+        },
+        "Formation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Formation shape (when multiple objects)",
+          "enum": [
+            "Triangulaire",
+            "Sans",
+            "Inconnue",
+            "Complexe",
+            "Quadrangulaire",
+            "Linéaire",
+            "Circulaire",
+            "Paire",
+            null
+          ]
+        },
+        "Trajectoire": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Movement trajectory",
+          "enum": [
+            "Arrêtée",
+            "Stationnaire",
+            "Rectiligne",
+            "Complexe",
+            "Saccadée",
+            "Brisée",
+            "Courbe",
+            "Cyclique",
+            null
+          ]
+        },
+        "Duree": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Duration in minutes"
+        },
+        "Photos": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Number of photographs taken"
+        },
+        "Niveau_source": {
+          "type": "integer",
+          "description": "Source quality level (1=direct, 2=secondary, 3=tertiary)",
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "Lune_Pres": {
+          "type": "integer",
+          "description": "Moon above horizon at time of sighting (0=no, 1=yes)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "CR": {
+          "type": "integer",
+          "description": "Credibility rating (0–5)",
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "ET": {
+          "type": "integer",
+          "description": "Strangeness/exceptionality rating (0–5)",
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "Hynek": {
+          "type": "string",
+          "description": "Hynek classification",
+          "enum": [
+            "LN",
+            "DD",
+            "RR1",
+            "RR2",
+            "RR3",
+            "RR4"
+          ]
+        },
+        "Forme": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Shape code (OV=oval, SV=sphere, SP=disc/saucer, TR=triangle, CI=cigar, RE=rectangle, CY=cylinder, PO=polygon, TZ=teardrop)",
+          "enum": [
+            "OV",
+            "SV",
+            "SP",
+            "TR",
+            "CI",
+            "RE",
+            "CY",
+            "PO",
+            "TZ",
+            "S1",
+            null
+          ]
+        },
+        "PAN": {
+          "type": "string",
+          "description": "GEIPAN/PAN classification (A=identified, B=probably identified, C=insufficient data, D=unidentified)",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "Identification": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free-text identified explanation (if any)"
+        }
+      }
+    },
+    "GEP": {
+      "$comment": "GEP (Gesellschaft zur Erforschung des UFO-Phänomens) — German UFO reports 1972-2023, 5,577 cases. Folder: (DE) GEP. Primary file: UFO-UAP-Falldaten_GEP_1972-2023.csv (semicolon-delimited, UTF-8, DE headers).",
+      "rowCount": "~5577",
+      "primaryKey": "Fallnummer",
+      "format": "CSV (semicolon-delimited)",
+      "language": "DE",
+      "columns": {
+        "Fallnummer": {
+          "type": "string",
+          "description": "GEP internal case number"
+        },
+        "Datum": {
+          "type": "string",
+          "description": "Date of observation (YYYY-MM-DD or free-text)"
+        },
+        "Land": {
+          "type": "string",
+          "description": "Country of sighting (primarily 'Deutschland')"
+        },
+        "Bundesland": {
+          "type": "string",
+          "description": "German federal state (Bundesland)"
+        },
+        "PLZ": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "German postal code (up to 5 digits)"
+        },
+        "PLZ_unvollstaendig": {
+          "type": "integer",
+          "description": "Postal code partial flag (0=complete, 1=partial)",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "Sichtungsort": {
+          "type": "string",
+          "description": "City or locality of sighting"
+        },
+        "lokale Uhrzeit": {
+          "type": "string",
+          "description": "Local time of sighting (HH:MM)"
+        },
+        "Zeitzone": {
+          "type": "string",
+          "description": "Timezone abbreviation",
+          "enum": [
+            "MESZ",
+            "MEZ",
+            "ESZ",
+            "EZ",
+            "ES",
+            "WESZ",
+            "ADT",
+            "WEZ",
+            "BST",
+            "EDT",
+            "EST",
+            "CET",
+            "CEST"
+          ]
+        },
+        "Tageszeit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Time-of-day descriptor (German)",
+          "enum": [
+            "abends",
+            "nachts",
+            "tagsüber",
+            "nachmittags",
+            "mittags",
+            "morgens",
+            "spätabends",
+            "spätnachmittags",
+            "vormittags",
+            "frühabends",
+            null
+          ]
+        },
+        "UTC": {
+          "type": "string",
+          "description": "UTC datetime of sighting"
+        },
+        "Erstkontakt": {
+          "type": "string",
+          "description": "Channel of first contact/report submission",
+          "enum": [
+            "Falldatenbank",
+            "E-Mail",
+            "Anruf",
+            "Kontaktformular",
+            "Facebook",
+            "Brief",
+            "Fragebogen",
+            "GEP-Forum",
+            "Medien",
+            "Sonstiges"
+          ]
+        },
+        "Gemeldet": {
+          "type": "string",
+          "description": "Date the case was reported"
+        },
+        "Sachverhalt": {
+          "type": "string",
+          "description": "Free-text summary of the sighting"
+        },
+        "Klassifikation_Hynek": {
+          "type": "string",
+          "description": "Hynek classification",
+          "enum": [
+            "NL",
+            "DD",
+            "CE I",
+            "CE II",
+            "CE III",
+            "CE IV",
+            "CE 4.2",
+            "S",
+            "Ungenügende Daten"
+          ]
+        },
+        "Klassifikation_Hendry": {
+          "type": "string",
+          "description": "Hendry IFO/UFO classification",
+          "enum": [
+            "IFO",
+            "NEAR IFO",
+            "PROBLEMATIC UFO",
+            "GOOD UFO",
+            "Ungenügende Daten",
+            "Hoax",
+            "S"
+          ]
+        },
+        "Klassifikation_IFO-Verifikationsschluessel": {
+          "type": "string",
+          "description": "IFO verification confidence level",
+          "enum": [
+            "V1",
+            "V2",
+            "V3"
+          ]
+        },
+        "Identifikation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Specific identified object or phenomenon (free-text)"
+        },
+        "Identifikation_Gruppe": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Category group for identified objects",
+          "enum": [
+            "Modell-Heißluftballone / Himmelslaternen",
+            "Folienballons / Forschungsballons / LED-Ballons / Heliumballons",
+            "Ungenügende Daten",
+            "Flugzeuge / Hubschrauber / Kondensstreifen",
+            "Planeten / Sterne / Mond",
+            "Satelliten / Flares / Raumstation",
+            "Insekten / Vögel / Partikel / Tropfen",
+            "Lichteffektgeräte / Skybeamer / Laser / LIDAR / Scheinwerfer / Beleuchtung",
+            "Meteore / Feuerkugeln / Re-entries",
+            "Drohnen",
+            "Unbekannt",
+            "Atmosphärische Effekte / Wetterphänomene",
+            "Handgemachtes",
+            null
+          ]
+        }
+      }
+    },
+    "UPDB_NICAP": {
+      "$comment": "UPDB / NICAP — NSID Database listing by date with links, cross-referenced NICAP cases (~5,885 rows). Folder: (US) UPDB. Primary file: updb-importers-main/data/NSID_DBListingbyDateLinks.csv.",
+      "rowCount": "~5885",
+      "primaryKey": "Date+City+Cat (composite)",
+      "format": "CSV",
+      "language": "EN",
+      "columns": {
+        "Date": {
+          "type": "string",
+          "description": "Date of sighting (YYMMDD format; '000000' = unknown)"
+        },
+        "City": {
+          "type": "string",
+          "description": "City or locality"
+        },
+        "State or Country": {
+          "type": "string",
+          "description": "US state abbreviation or full country name"
+        },
+        "Cat": {
+          "type": "integer",
+          "description": "NICAP/NSID phenomenological category",
+          "enum": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11
+          ],
+          "enumDescriptions": {
+            "1": "Nocturnal lights",
+            "2": "Daylight discs",
+            "3": "Radar cases",
+            "4": "Close encounters (CE I–IV)",
+            "5": "Photographic cases",
+            "6": "Physical traces",
+            "7": "Medical effects on witnesses",
+            "8": "Animal reactions",
+            "9": "Electromagnetic effects",
+            "11": "Unclassified / other"
+          }
+        },
+        "BB": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Linked Blue Book case ID (if cross-referenced)"
+        },
+        "NC flag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "NICAP data quality flag (sparse)"
+        },
+        "LC": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Location confidence flag (sparse)"
+        },
+        "Description": {
+          "type": "string",
+          "description": "Free-text case description"
+        }
+      }
+    },
+    "OVNIBASE": {
+      "$comment": "OVNIBASE — French UFO database (~3,145 cases), primarily France. Folder: (FR) OVNIBASE. Primary file: ovni-base.csv (tab-delimited, Latin-1, FR headers).",
+      "rowCount": "~3145",
+      "primaryKey": "Num cas",
+      "format": "TSV",
+      "language": "FR",
+      "columns": {
+        "Num cas": {
+          "type": "integer",
+          "description": "Sequential case number"
+        },
+        "Départ.": {
+          "type": "string",
+          "description": "French département number (e.g. '51')"
+        },
+        "Ville": {
+          "type": "string",
+          "description": "City or locality"
+        },
+        "Latitude": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Latitude in decimal degrees (comma-decimal French format)"
+        },
+        "Longitude": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Longitude in decimal degrees"
+        },
+        "CR Observation": {
+          "type": "string",
+          "description": "Free-text narrative of the sighting"
+        },
+        "Typ Obs": {
+          "type": "string",
+          "description": "Type of observation / distance",
+          "enum": [
+            "Visuel : Eloigné",
+            "Visuel : proche",
+            "Visuel proche avec personnages",
+            "Seulement entités"
+          ]
+        },
+        "Date": {
+          "type": "string",
+          "description": "Date of sighting (DD/MM/YYYY)"
+        },
+        "Heure": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Time of sighting (HH:MM, sparse)"
+        },
+        "Durée": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Duration (free-text, sparse)"
+        },
+        "Nbre Objets": {
+          "type": "integer",
+          "description": "Number of objects observed (1–20+)"
+        },
+        "Type Objet": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Shape/type of object (~115 unique values; major examples)",
+          "examples": [
+            "Non-défini",
+            "Boule Lumineuse",
+            "Disque",
+            "Cigare",
+            "Sphère",
+            "Ovoïde",
+            "Triangle",
+            "Elliptique",
+            "Soucoupe avec dôme",
+            "Demi sphère",
+            "Rectangle",
+            "Cylindre"
+          ]
+        },
+        "Couleur": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Dominant colour",
+          "enum": [
+            "Rouge",
+            "Blanc",
+            "Orange",
+            "Métallique (argent,)",
+            "Jaune",
+            "Plusieurs couleurs",
+            "Changement couleur",
+            "Vert",
+            "Gris",
+            "Bleu",
+            "Noir",
+            "Rose",
+            null
+          ]
+        },
+        "Brillance": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Luminosity descriptor",
+          "enum": [
+            "Brillant",
+            "éblouissant",
+            "Halo",
+            "fluorescent",
+            "Faiblement lumineux",
+            "Réfléchit la lumière",
+            "Brillant par intermitence",
+            "Non lumineux",
+            null
+          ]
+        },
+        "Effet visuel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Visual effect observed",
+          "examples": [
+            "Traînée",
+            "Nombreuses lumières",
+            "faisceau de lumière",
+            "hublots",
+            "Phares où lumières fixes",
+            "feux clignotants",
+            "gerbes d'étincelles",
+            "Rayon",
+            "Emission objets satellites",
+            "émission de fumée",
+            "Projecteur",
+            "Emission de flammes"
+          ]
+        },
+        "Disp inst": {
+          "type": "string",
+          "description": "Instantaneous disappearance (o=yes, n=no)",
+          "enum": [
+            "o",
+            "n"
+          ]
+        },
+        "Vitesse": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Speed descriptor (~63 unique values)",
+          "examples": [
+            "Rapide",
+            "Lent",
+            "Immobile",
+            "Extrêmement rapide",
+            "lent puis rapide",
+            "Immobile puis accélération foudroyante",
+            "Immobile puis lent",
+            "Immobile puis départ rapide"
+          ]
+        },
+        "Mouvement/type de vol": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Movement/flight type (~92 unique values)",
+          "examples": [
+            "En ligne droite",
+            "Par à coups (immobilité puis déplacement)",
+            "Diverses manœuvres",
+            "Proche du sol ou basse altitude",
+            "Au sol puis décollage",
+            "Un ou plusieurs virages",
+            "Objet au sol",
+            "Atterrissage puis décollage",
+            "Descente",
+            "Virage à angle droit"
+          ]
+        },
+        "Taille": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Size descriptor (~195 unique, apparent or estimated, e.g. '2 à 5 mètres (évaluée)', 'Pleine Lune (apparente)')"
+        },
+        "Type Entité": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Entity/occupant type description (~58 unique, sparse)"
+        },
+        "Nbre Entité": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Number of entities (0 if none)"
+        },
+        "Action entité": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Actions performed by entities (comma-separated, sparse)"
+        },
+        "Effets témoin": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Physiological/psychological effects on witness (~115 unique values, comma-separated)"
+        },
+        "Effet Physique": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Physical effects on environment or vehicles (sparse)"
+        },
+        "Nbre Témoins": {
+          "type": "integer",
+          "description": "Number of witnesses (1–30+)"
+        },
+        "Enq Off": {
+          "type": "string",
+          "description": "Officially investigated (o=yes, n=no)",
+          "enum": [
+            "o",
+            "n"
+          ]
+        },
+        "Météo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Weather conditions",
+          "enum": [
+            "Beau temps, ciel clair",
+            "Nuages épars",
+            "Ciel couvert haute altitude",
+            "Ciel couvert basse altitude",
+            "Pluie continue faible",
+            "Pluies éparses",
+            "Brouillard",
+            "Grosse pluie",
+            "Orage",
+            "Tempête",
+            "Neige",
+            null
+          ]
+        },
+        "Année": {
+          "type": "integer",
+          "description": "Year of observation"
+        },
+        "Atter": {
+          "type": "string",
+          "description": "Landing reported (o=yes, n=no)",
+          "enum": [
+            "o",
+            "n"
+          ]
+        }
+      }
+    },
+    "UFOSETI": {
+      "$comment": "UFOSETI.org — Russian/international UAP database, 3,069 cases with bilingual (EN+RU) descriptions. Folder: (RU) UFOSETI. Primary file: final_ufoseti_dataset.csv (CSV, UTF-8, EN column headers). Also available as .h5 (HDF5) and Google Sheets.",
+      "rowCount": "~3069",
+      "primaryKey": "obs_number",
+      "format": "CSV / HDF5",
+      "language": "EN+RU",
+      "columns": {
+        "obs_number": {
+          "type": "integer",
+          "description": "Unique UFOSETI observation number"
+        },
+        "en_description": {
+          "type": "string",
+          "description": "English-language description of the event"
+        },
+        "ru_description": {
+          "type": "string",
+          "description": "Russian-language description of the event"
+        },
+        "country": {
+          "type": "string",
+          "description": "Country of sighting (full name)"
+        },
+        "ar_code": {
+          "type": "string",
+          "description": "UFOSETI anomaly+reliability code (A0-A3 = anomaly level; R0-R4 = source reliability)",
+          "enum": [
+            "A0R0",
+            "A0R1",
+            "A0R2",
+            "A1R1",
+            "A1R2",
+            "A1R3",
+            "A2R1",
+            "A2R2",
+            "A2R3",
+            "A2R4",
+            "A3R1",
+            "A3R2"
+          ]
+        },
+        "ar_code_full": {
+          "type": "string",
+          "description": "Human-readable expansion of ar_code",
+          "enum": [
+            "Probably Anomalous | Reliable Source/Primary Source",
+            "Probably Not Anomalous | Reliable Source/Primary Source",
+            "Probably Anomalous | Rumor/Media Publication",
+            "Probably Not Anomalous | Rumor/Media Publication",
+            "Anomalous | Reliable Source/Primary Source",
+            "Not Anomalous | Reliable Source/Primary Source",
+            "Probably Anomalous | Indirect Evidence",
+            "Probably Anomalous | Indirect Testimony",
+            "Anomalous | Rumor/Media Publication",
+            "Not Anomalous | Hoax/Mistake",
+            "Not Anomalous | Rumor/Media Publication",
+            "Probably Not Anomalous | Indirect Testimony"
+          ]
+        },
+        "hynek_vallee_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Combined Hynek/Vallée classification code",
+          "enum": [
+            "FB1",
+            "FB2",
+            "FB5",
+            "MA1",
+            "MA2",
+            "AN1",
+            "AN2",
+            "CE1",
+            "CE2",
+            "CE3",
+            "CE4",
+            "CE5",
+            null
+          ]
+        },
+        "authenticities": {
+          "type": "string",
+          "description": "Report authentication status",
+          "enum": [
+            "Unconfirmed",
+            "Investigation was made",
+            "Under investigation",
+            "Insufficient data",
+            "Repetition",
+            "Investigation suspended"
+          ]
+        },
+        "observation_date": {
+          "type": "string",
+          "description": "Date and time of observation (DD-MM-YYYY HH:MMZ format)"
+        },
+        "report_date": {
+          "type": "string",
+          "description": "Date and time the report was filed"
+        },
+        "shape": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Shape of the observed object",
+          "enum": [
+            "Round",
+            "Circular",
+            "Spherical",
+            "Triangular",
+            "Star-shaped",
+            "Cigar-shaped",
+            "Oval",
+            "Hemisphere",
+            "Polygonal",
+            null
+          ]
+        },
+        "observer_direction": {
+          "type": "string",
+          "description": "Cardinal direction the observer was facing or the object was seen in",
+          "enum": [
+            "No direction",
+            "East",
+            "West",
+            "South-West",
+            "North-West",
+            "South",
+            "South-East",
+            "North",
+            "North-East"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Original source of the report (free-text)"
+        },
+        "ufoseti_report_date": {
+          "type": "string",
+          "description": "Date/time the case was entered into the UFOSETI database (UTC)"
+        },
+        "url": {
+          "type": "string",
+          "description": "URL to the case page on ufoseti.org",
+          "format": "uri"
+        }
+      }
+    },
+    "UAPCHECK": {
+      "$comment": "UAPCHECK.com — International data-exchange API registry (NOT a sighting catalogue). Folder: (INT) UAPCHECK. Primary file: api.sql (MariaDB dump). Contains 22 participating organisations and their API connection metadata. No individual sighting records.",
+      "rowCount": "22 (organisations)",
+      "primaryKey": "id_api",
+      "format": "SQL (MariaDB dump)",
+      "language": "EN",
+      "columns": {
+        "id_api": {
+          "type": "integer",
+          "description": "Auto-increment organisation ID"
+        },
+        "api_org_key": {
+          "type": "string",
+          "description": "Unique organisation key (format 'UAP-XXXXXX')",
+          "pattern": "^UAP-[0-9]{6}$"
+        },
+        "api_org_url": {
+          "type": "string",
+          "description": "Website / API endpoint of the organisation",
+          "format": "uri"
+        },
+        "api_org_name": {
+          "type": "string",
+          "description": "Human-readable organisation name"
+        },
+        "api_org_lang": {
+          "type": "string",
+          "description": "ISO 639-1 language code of the organisation"
+        },
+        "api_org_latitude": {
+          "type": "number",
+          "description": "Latitude of organisation HQ"
+        },
+        "api_org_longitude": {
+          "type": "number",
+          "description": "Longitude of organisation HQ"
+        },
+        "api_options": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "JSON structure with API configuration options"
+        }
+      },
+      "knownOrganisations": [
+        "UAP Check",
+        "CISU (Italy)",
+        "Euro UFO (Belgium)",
+        "GEP (Germany)",
+        "AFU (Sweden)",
+        "Society for UAP Studies",
+        "MUFON (USA)",
+        "SCEAU (France)",
+        "ERENZI (Greece)",
+        "ASFAN (Romania)",
+        "COBEPS (Belgium)",
+        "CTEC-STELLAR (Portugal)",
+        "CUCO (Spain)",
+        "GEIPAN (France)",
+        "ROOS (Sweden)",
+        "SRCAA ZOND (Ukraine)",
+        "TÜM ZARE (Czech Republic)",
+        "UFOSETI (Russia)"
+      ]
+    },
+    "UAP_SIGHTINGS_GITHUB": {
+      "$comment": "MiChaelinzo/UAP_SIGTHINGS GitHub project — JSON-based multi-source sighting database, sample of ~1,000 records available in getData2.json. Sources include NUFORC, UFODNA, NICAP. Folder: (US) UAP SIGHTINGS.",
+      "rowCount": "~1000 (sample)",
+      "primaryKey": "id",
+      "format": "JSON",
+      "language": "EN",
+      "columns": {
+        "id": {
+          "type": "string",
+          "description": "Unique sighting ID"
+        },
+        "city": {
+          "type": "string",
+          "description": "City of sighting"
+        },
+        "country": {
+          "type": "string",
+          "description": "ISO 3166-1 alpha-2 country code (primarily 'US')"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime of sighting"
+        },
+        "date_detail": {
+          "type": "string",
+          "description": "Human-readable date/time string"
+        },
+        "description": {
+          "type": "string",
+          "description": "Free-text witness narrative"
+        },
+        "district": {
+          "type": "string",
+          "description": "State, province or region (uppercase)"
+        },
+        "geoname_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "GeoNames geographic ID (sparse)"
+        },
+        "latitude": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Latitude (sparse)"
+        },
+        "longitude": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Longitude (sparse)"
+        },
+        "location": {
+          "type": "string",
+          "description": "GeoNames location reference ID"
+        },
+        "other": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Additional notes or source-specific data"
+        },
+        "source": {
+          "type": "string",
+          "description": "Originating database",
+          "enum": [
+            "NUFORC",
+            "UFODNA",
+            "NICAP"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "description": "Case ID within the originating source database"
+        },
+        "ts": {
+          "type": "string",
+          "description": "PostgreSQL tsvector-formatted text search index of the description"
+        },
+        "water": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Water body reference (sparse)"
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Word count of the description field"
+        }
+      }
+    },
+    "CISU_CISUCAT": {
+      "$comment": "CISU (Centro Italiano Studi Ufologici) — Italian UAP catalogue (CISUCAT), multiple yearly releases up to 2025. Folder: (IT) CISU – CISUCAT. Files are .xls (Excel 97–2003). Schema inferred from file naming and CISU documentation; individual column analysis requires XLS parsing.",
+      "rowCount": "unknown (large: ~50,000+ estimated from file sizes up to 14 MB)",
+      "primaryKey": "unknown (CISU internal case number)",
+      "format": "XLS (Excel 97-2003)",
+      "language": "IT",
+      "files": {
+        "2022-08-31 CISUCAT.xls": "Full catalogue as of Aug 2022 (~14 MB, largest file)",
+        "CisuCat2023d.xls": "2023 edition (rev d)",
+        "CisuCat2024f.xls": "2024 edition (rev f)",
+        "CisuCat2025a.xls": "2025 edition (rev a)"
+      },
+      "$note": "Column schema requires XLS parsing. Based on CISU publications, expected fields include case number, date, time, location, province, country, shape, duration, number of witnesses, witness type, source, Hynek classification, and description."
+    },
+    "CUFOC_1977_ITALY_FRANCE": {
+      "$comment": "CUFOC 1977 Italy-France comparison study — a 1977 wave dataset digitised from the original Bourdon+Delaval publications (1986–1993). Folder: (IT+FR) CUFOC 1977. Primary structured file: ita_fr77_delaval.xlsx. Supporting PDFs contain the original study.",
+      "rowCount": "unknown (partial digitisation of 1977 wave cases)",
+      "primaryKey": "unknown",
+      "format": "XLSX",
+      "language": "FR/IT",
+      "files": {
+        "ita_fr77_delaval.xlsx": "Digitised case data",
+        "1986_Bourdon+Delaval+Murtagh_Ufo-IfoComparison (Italy1977).pdf": "Original published comparison study",
+        "1990 Bourdon+Delaval_1977UfoIfoFrancePart1-4.pdf": "Extended French wave study (4 parts)",
+        "1993 Bourdon+Delaval_1977 Italy-France Comparison.pdf": "Final cross-country comparison",
+        "1979-12-08_Codifica-Cun-Cufoc-Cnifaa.pdf": "Original CUFOC coding schema document"
+      },
+      "$note": "Column schema requires XLSX parsing. Expected fields derived from Bourdon/Delaval methodology: case ID, date, time, location (FR/IT), Hynek classification, IFO/UFO determination, shape, description, source."
+    },
+    "WEINSTEIN_PILOT_CATALOG": {
+      "$comment": "Dominique Weinstein Pilot Catalog — 1,300+ aircraft crew UAP encounters (1916–1999, global). Folder: (FR) WEINSTEIN PILOT CATALOG. Primary file: Weinstein UFO Catalog 2001.xlsx.",
+      "rowCount": "~1300",
+      "primaryKey": "W#",
+      "format": "XLSX",
+      "language": "EN",
+      "columns": {
+        "W#": {
+          "type": "integer",
+          "description": "Sequential Weinstein case number"
+        },
+        "DATE": {
+          "type": "string",
+          "description": "Date in YY.MM.DD format (e.g. '44.06.00' = June 1944)"
+        },
+        "AAAA": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Full date ISO-like (YYYY.MM.DD; REF errors common)"
+        },
+        "MM": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Month (spreadsheet formula; often #REF!)"
+        },
+        "DD": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Day (spreadsheet formula; often #REF!)"
+        },
+        "TIME": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Local time (HH:MM, sparse)"
+        },
+        "ZT/LT": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Time zone indicator",
+          "enum": [
+            "ZT",
+            "LT",
+            null
+          ]
+        },
+        "COUNTRY": {
+          "type": "string",
+          "description": "Country or ocean/region (full name)"
+        },
+        "LOCATION": {
+          "type": "string",
+          "description": "Specific location, airway or coordinates"
+        },
+        "LAT.LNG": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Coordinates (sparse, free-text)"
+        },
+        "TYPE OF PLANE AND WITNESSES": {
+          "type": "string",
+          "description": "Aircraft type and witness description"
+        },
+        "WHO": {
+          "type": "string",
+          "description": "Witness role (e.g. 'pilot', 'crew', 'passengers')"
+        },
+        "UFO DESCRIPTION": {
+          "type": "string",
+          "description": "Free-text description of the UAP"
+        },
+        "Radar": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Radar detection code (AR=airborne radar, GR=ground radar, RO=radar only, NR=no radar, GR AR=both)",
+          "enum": [
+            "AR",
+            "GR",
+            "RO",
+            "NR",
+            "GR AR",
+            "GRAR",
+            "GRARO",
+            null
+          ]
+        },
+        "G": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ground witness flag (G = confirmed ground witness also saw the object)",
+          "enum": [
+            "G",
+            null
+          ]
+        },
+        "X": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Multiple independent witness flag",
+          "enum": [
+            "X",
+            null
+          ]
+        },
+        "E": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Electromagnetic/physical effect on aircraft flag",
+          "enum": [
+            "E",
+            null
+          ]
+        },
+        "SOURCES": {
+          "type": "string",
+          "description": "Source references (coded bibliography)"
+        }
+      }
+    },
+    "PETROWITSCH_LATAM": {
+      "$comment": "Petrowitsch Catalogue — Chilean and Latin American UAP cases, two datasets. Folder: (CL) PETROWITSCH. Files: Petrowitsch_Casos OVNI Chilenos_2024-01-29.xlsx (Chilean cases) and Petrowitsch_Casos Latino_americanos_2024-01-29.xlsx (Latin American cases up to V3529).",
+      "rowCount": "~3529+ (combined, from 'Ultimo: V3529' marker)",
+      "primaryKey": "DIA+MES+AÑO+LUGAR (composite date-location key)",
+      "format": "XLSX",
+      "language": "ES",
+      "columns": {
+        "DIA": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Day of observation (integer or approximate marker)"
+        },
+        "MES": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Month of observation (integer)"
+        },
+        "AÑO": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "description": "Year of observation"
+        },
+        "HORA": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Local time (HH hs. format, sparse)"
+        },
+        "H": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Duration hours component"
+        },
+        "M": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Duration minutes component"
+        },
+        "S": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Duration seconds component"
+        },
+        "LUGAR": {
+          "type": "string",
+          "description": "City or locality name (free-text)"
+        },
+        "REGION": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Chilean administrative region (Roman numeral, e.g. 'X', 'RM')"
+        },
+        "COORDENADAS aprox.": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Approximate coordinates (free-text, e.g. '41º45\\',73º44\\'')"
+        },
+        "J.V.": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Vallée catalogue reference code (e.g. 'IB')"
+        },
+        "Nº": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Number of objects observed"
+        },
+        "Descripción": {
+          "type": "string",
+          "description": "Free-text description of the phenomenon"
+        },
+        "Velocidad": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Speed descriptor (free-text, sparse)"
+        },
+        "DIRECC": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Direction of travel (free-text, sparse)"
+        },
+        "OTRAS CARACTERISTICAS": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Additional observed characteristics"
+        },
+        "FOTO ,FILM": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Photo/film indicators (M=Movie, F=photo codes)"
+        },
+        "TESTIGOS Nº": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Number of witnesses"
+        },
+        "Nombres": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Witness names (sparse)"
+        },
+        "Ocupación": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Witness occupation (sparse)"
+        },
+        "POSIBLE EXPLICACION": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Possible explanation or identification"
+        },
+        "FUENTES": {
+          "type": "string",
+          "description": "Bibliographic source references (coded)"
+        }
+      }
+    },
+    "PROJECT_ZARE": {
+      "$comment": "Project ZARE (Czech Republic) — Czech UAP cases, 2020 dataset. Folder: (CZ) PROJECT ZARE. Files: 2020.12.01.01 - Poruba.pdf (single case report) and 2020.rar (large archive ~1.9 GB, likely full database). Structured tabular schema requires RAR extraction.",
+      "rowCount": "unknown (large archive)",
+      "format": "RAR archive + PDF",
+      "language": "CS",
+      "$note": "The 2020.rar archive (1.9 GB) likely contains the full case database. Column schema requires extraction. The single PDF case report (Poruba, 2020-12-01) demonstrates a narrative format. Standard Czech UAP report fields expected: case number, date, time, location, municipality, coordinates, number of witnesses, weather, description, sketch, investigation notes."
+    },
+    "GEUCRS": {
+      "$comment": "GEUCRS (Grupo de Estudos Ufológicos da Costa Rica do Sul — Brazil) — Brazilian UAP cases. Folder: (BR) GEUCRS. Files are three screenshots/images (MAPA.png, MOBILE.jpg, DB1.jpg) showing a map and database interface. No raw data file available; structured data schema cannot be determined from images alone.",
+      "rowCount": "unknown",
+      "format": "Images (PNG/JPG screenshots)",
+      "language": "PT",
+      "$note": "Only UI/map screenshots are present in this folder. No structured data file is available for schema analysis. Contact GEUCRS directly or access their web platform for data export."
+    },
+    "UFOCAT": {
+      "$comment": "UFOCAT 2023 — the most comprehensive UFO reference database in existence. Over 146,000 records compiled since 1967, originally by Dr. David R. Saunders (Condon Committee); maintained and expanded by Dr. Donald A. Johnson. Published April 2023 by Sun River Research Institute, Bow NH. Primary files: ufocat2023.accdb (MS Access, ~560 MB), UFOCAT 2023.xlsx (~69 MB), plus auxiliary tables: UFOCAT 2023 WORLD.xlsx, UFOCAT 2023 Counties.xlsx, UFOCAT 2023 Sources.xlsx, UFOCAT 2023 References.xlsx. Schema source: UFOCAT Codebook - 2023.pdf (Johnson & Saunders, April 2023). Copyright © 2023, Donald A. Johnson / J. Allen Hynek Center for UFO Studies.",
+      "rowCount": "~146000",
+      "primaryKey": "URN",
+      "format": "Microsoft Access 97 (.accdb) + XLSX export",
+      "language": "EN",
+      "auxiliaryTables": {
+        "SOURCES": "Bibliographic detail for each SOURCE/ISOURCE mnemonic code (~Appendix A; lookup by SOURCE key)",
+        "COUNTIES": "US county names, census data, and geographic coordinates; also used for non-US province lookups",
+        "WORLD": "Country codes, names, and REGION abbreviations (Appendix B–C; lookup by STATE code)",
+        "REFERENCES": "Extended reference list beyond Appendix A"
+      },
+      "columns": {
+        "PRN": {
+          "type": "integer",
+          "description": "Primary Record Number — points to the URN of the most authoritative record for this event. All records sharing the same PRN refer to the same real-world UFO incident. Use PRN to group records into event blocks and to deduplicate statistical tallies."
+        },
+        "X2": {
+          "type": "integer",
+          "description": "Handedness / order of primacy within an event block. 0 = primary record (most authoritative source; use this to avoid double-counting). 1 = independent investigation of the same event, not chosen as primary. 2 = references the primary source or another source (secondary). 3 = references only a secondary source (tertiary).",
+          "enum": [0, 1, 2, 3]
+        },
+        "IRN": {
+          "type": ["integer", "null"],
+          "description": "Indirect Record Number — points to the URN most closely associated with the source cited by this record's author. Blank for true primary entries where the author is the original source."
+        },
+        "X1": {
+          "type": ["string", "null"],
+          "description": "Confidence flag for the PRN–IRN relationship. '=' = clear match between this record and its indirect source. '-' = possible match. Blank = record is a primary entry with no indirect source.",
+          "enum": ["=", "-", null]
+        },
+        "URN": {
+          "type": "integer",
+          "description": "UFOCAT 2023 Record Number — permanent, unique identifier assigned to every record in the database regardless of data completeness. The primary key."
+        },
+        "AUTHOR": {
+          "type": ["string", "null"],
+          "maxLength": 30,
+          "description": "Surname, first name, and middle initial (up to 30 characters) of the first author, UFO investigator, or editor responsible for the SOURCE. May contain the name of a magazine, journal, or organisation if the author is unknown."
+        },
+        "LEVEL": {
+          "type": ["string", "null"],
+          "description": "Level of source entry — numeric code 0–9 indicating the type and accessibility of the direct source. Lower numbers (0–3) indicate investigation files; 3 is the preferred source type. Higher numbers (4–9) indicate published material of decreasing primary-contact quality. Alphabetic codes or blank indicate non-event records.",
+          "enum": ["0","1","2","3","4","5","6","7","8","9",null],
+          "enumDescriptions": {
+            "9": "List only — no narrative; within-source IDs are compiler serial numbers (PAGEVOL Scheme 2)",
+            "8": "Revised edition of a published work (paperback, translation); page numbers may differ (PAGEVOL Scheme 1)",
+            "7": "First edition of a book or monograph in the author's native language; within-source IDs are page numbers (PAGEVOL Scheme 1)",
+            "6": "Author's personal files — no standard within-source identification (PAGEVOL Scheme 3 or 5)",
+            "5": "UFO-specialist periodical; within-source IDs are Year/Month/Page (PAGEVOL Scheme 4)",
+            "4": "General-circulation periodical or newspaper; within-source IDs are Year/Month/Day (PAGEVOL Scheme 5)",
+            "3": "Investigation file — witness names freely available; preferred source type for new additions",
+            "2": "Investigation file — witness names automatically confidential; some detailed data also confidential",
+            "1": "Investigation file — entire case confidential; may appear only as a tally in statistics",
+            "0": "Investigation file — confidentiality level not yet determined"
+          }
+        },
+        "SOURCE": {
+          "type": ["string", "null"],
+          "maxLength": 12,
+          "description": "12-character mnemonic code uniquely identifying the direct source of this record (e.g. an investigations file, periodical, or book). Used with PAGEVOL to locate the original document. Lookup full bibliographic details in the SOURCES auxiliary table. Individual authors are coded as FirstInitial + Surname (+ edition number); periodicals by name; investigation files by organisation abbreviation."
+        },
+        "PAGEVOL": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Position within the direct source (up to 8 characters). Interpretation depends on LEVEL: Scheme 1 (LEVEL 7–8) = page number; Scheme 2 (LEVEL 9) = sequential compiler number; Scheme 3 (LEVEL 6) = acquisition number; Scheme 4 (LEVEL 5) = YYYYMMPP (year/month/page); Scheme 5 (LEVEL 4) = YYYYMMDD (year/month/day); Scheme 6 (LEVEL 3 unpublished) = blank."
+        },
+        "ISOURCE": {
+          "type": ["string", "null"],
+          "maxLength": 12,
+          "description": "12-character mnemonic for the indirect source — the source cited or credited by the AUTHOR. Critical for grouping records about the same event and identifying primary entries. Uses the same coding convention as SOURCE. Special single-character codes: '*' = first-hand written investigation report; '+' = standardised witness report form; '\\'' = firsthand witness account in a scientific journal; '.' = witness letter or unstructured interview; ',' = newspaper or non-scientific periodical account."
+        },
+        "IPAGEVOL": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Position within the indirect source, using the same PAGEVOL schemes as SOURCE/PAGEVOL."
+        },
+        "YEAR": {
+          "type": ["string", "null"],
+          "maxLength": 4,
+          "description": "4-character year of the sighting event. Exact years are '1947'–'2023'. When the exact year is unknown: trailing '.' = decade known only (e.g. '196.' = somewhere in the 1960s); 'E' suffix = early in that decade; 'M' = middle; 'L' = late (e.g. '196L' = late 1960s, probably 1968–1969)."
+        },
+        "MO": {
+          "type": ["string", "null"],
+          "maxLength": 2,
+          "description": "2-character month of the event ('01'–'12'). When month is unknown, first column is blank and second contains an approximate season code: E=Early/Jan–Apr, F=Fall/Oct–Dec, L=Late/Sep–Dec, M=Middle-Summer/May–Aug, S=Spring/Apr–Jun, W=Winter/Jan–Mar."
+        },
+        "DAY": {
+          "type": ["string", "null"],
+          "maxLength": 2,
+          "description": "2-character day of the event ('01'–'31'). When day is unknown, first column is blank and second contains: E=Early/~first week, M=Middle, L=Late/~last week."
+        },
+        "TIME": {
+          "type": ["string", "null"],
+          "maxLength": 5,
+          "description": "5-character local time of event onset (HHMM format, 24-hour). '00'–'23' for hour, '00'–'59' for minute. When precise time unknown, the field contains a text descriptor: 'Day', 'Night', 'Morn', 'After', 'Even', 'Dawn', 'Noon', 'Dusk', 'MidD', 'MidN', 'Pdawn'. Within the minute sub-field: '-' in third column = 'early' or 'before' the hour; '+' = 'late' or 'after'."
+        },
+        "TZ": {
+          "type": ["string", "null"],
+          "maxLength": 2,
+          "description": "Date/time accuracy and timezone flag. '*' = time coded in GMT/UTC/Z-time (date may differ from local). '+' = local daylight-saving time. '.' = explicitly confirmed local standard time. '-' = date approximate (±1–2 days). '\\'' = date is a publication date ('not later than'). '=' = date given by source but believed or known to be in error. Records with '-' or '=' codes are typically excluded from chronological analyses.",
+          "enum": ["*", "+", ".", "-", "'", "=", null]
+        },
+        "TZONE": {
+          "type": ["number", "null"],
+          "description": "Numeric time zone code for the event location, used to calculate UTC and Sidereal Time. Represents hours behind Greenwich noon. US examples: 4=Pacific Standard, 5=Mountain Standard, 6=Central Standard, 7=Eastern Standard. Full world table in UFOCAT Codebook Table 3. Fractional zones (e.g. 8.5=Newfoundland, 15.5=Iran, 17.5=India/Sri Lanka) are supported.",
+          "examples": [4, 5, 6, 7, 8, 8.5, 12, 13, 14, 17.5, 21.5]
+        },
+        "WEA": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Weather conditions at time of sighting (8-character code). Not systematically recorded except in primary sources.",
+          "enum": ["Calm","Clear","Clouds","Cloudy","Fog","Ice","Muddy","Overcast","Partial","Rain","Snow","Storm","Thunder","Undrcast",null]
+        },
+        "TER": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Local terrain and landmark type at the sighting location (8-character code, ~100 values). Applies regardless of whether the terrain figures directly in the scenario. Notable UAP-relevant codes include: Airfield, Airport, Electric (electrical infrastructure), Military, Missile (missile facility), Nuclear (nuclear site), Warplane (warplane base), Warship. Full list in UFOCAT Codebook Table 5.",
+          "examples": ["Airfield","Airport","AptBldg","Arsenal","Bedroom","Bridge","Building","Cemetery","City","Desert","Electric","Farm","Field","Forest","Highway","Home","Hospital","House","Lake","Military","Mine","Mountain","Missile","Nuclear","Ocean","Railroad","Ranch","River","Road","Rural","Shore","Suburb","Warplane","Warship","Woods","Yard"]
+        },
+        "VFLG": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Vehicle flag — indicates whether witnesses were inside a moving vehicle during the sighting. Priority order (bottom = highest priority when multiple apply): '(' = orbiting spacecraft; '\\'' = flying aircraft; ',' = boat/watercraft; '.' = moving automobile or motorcycle; '#' = aircraft witnesses in simultaneous communication with ground witnesses.",
+          "enum": ["(", "'", ",", ".", "#", null]
+        },
+        "LOCATION": {
+          "type": ["string", "null"],
+          "maxLength": 30,
+          "description": "Geographic place-name of the sighting location (city, town, or village). Formatted as 'PLACENAME DIRECTION DISTANCEunits' (e.g. 'LOUISVILLE SW 10M'). Two locations separated by '=' indicate 'between'. Abbreviations: ST=Saint, STE=Sainte; embedded '.' omits trivial words in foreign names."
+        },
+        "LFLG": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Location accuracy flag. '-' = location is approximate (e.g. 'near Los Angeles'). '+' = LONGITUDE/LATITUDE give the specific witness location. '*' = LONGITUDE/LATITUDE give the specific phenomenon location (from traces or strong evidence). '=' = place-name in LOCATION is believed or known to be in error.",
+          "enum": ["-", "+", "*", "=", null]
+        },
+        "REGION": {
+          "type": ["string", "null"],
+          "maxLength": 2,
+          "description": "World region abbreviation (1–2 characters). Lookup full names in the WORLD auxiliary table.",
+          "enum": ["A","AA","AF","AS","AU","CA","CN","EU","I","M","ME","NA","P","SA","US","W","XX","RE"],
+          "enumDescriptions": {
+            "A":  "Atlantic Ocean (including Iceland)",
+            "AA": "Antarctica",
+            "AF": "Africa",
+            "AS": "Asia",
+            "AU": "Australia and Oceania (including Papua New Guinea)",
+            "CA": "Central America (including Puerto Rico)",
+            "CN": "Canada",
+            "EU": "Europe (including Russia west of the Ural Mountains)",
+            "I":  "Indian Ocean",
+            "M":  "Mediterranean Sea",
+            "ME": "Middle East",
+            "NA": "North America (US or Canada, unspecified)",
+            "P":  "Pacific Ocean (including Hawaii)",
+            "SA": "South America",
+            "US": "United States (excluding Hawaii and Puerto Rico)",
+            "W":  "World (unspecified global or multi-country event)",
+            "XX": "Outer Space",
+            "RE": "Roman Empire (historical cases)"
+          }
+        },
+        "STATE": {
+          "type": ["string", "null"],
+          "maxLength": 3,
+          "description": "State or country code (up to 3 characters). US states and DC use standard 2-letter USPS ZIP abbreviations (e.g. 'CA', 'NY'). Canadian provinces and Australian states also have distinct codes. Countries use 1–3 letter codes as listed in Appendix B of the codebook and the WORLD auxiliary table. Used together with COUNTY for geographically sorted statistics."
+        },
+        "COUNTY": {
+          "type": ["string", "null"],
+          "maxLength": 12,
+          "description": "County or province name (up to 12 characters). ~3,150 US counties provide the primary geographic subdivision. Full list in the COUNTIES auxiliary table. When no principal witness age is determinable, this field may encode witness-group composition as '[N][A]' where N=number of families and A=adult type code: A=Adult mixed, C=Children, T=Teenager, S=Single adult, M=Married adult, X=Mixed adult, Y=All under 20, W=All over 20."
+        },
+        "WITNESSES": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Number of witnesses (right-justified in first 3 columns). Numeric if known; '-' prefix = approximately; '+' prefix = at least; 'C' suffix = hundred; 'K' suffix = thousand. Single-letter approximations in third column: F=few, G=group, M=many/multiple, N=numerous, S=several."
+        },
+        "AGE": {
+          "type": ["string", "null"],
+          "maxLength": 2,
+          "description": "Age of the principal witness in years (numeric, 2 characters). If no principal witness is identifiable or age is unknown, blank. Created in 1976; spotty for records below URN ~81,000."
+        },
+        "SEX": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Sex of the principal witness or gender composition of the witness group. 'M' = all male. 'F' = all female. 'C' = couple (husband and wife, possibly with children). 'X' = mixed or other defined group. Blank = unknown or uncoded.",
+          "enum": ["M","F","C","X",null]
+        },
+        "MIS": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Military/police witness flag. '#' = witness(es) were military personnel. '+' = witness(es) were police. '=' = witness name as copied from source is incorrect or misspelled.",
+          "enum": ["#", "+", "=", null]
+        },
+        "NAMES": {
+          "type": ["string", "null"],
+          "maxLength": 30,
+          "description": "Witness surnames (up to 30 characters). Last name of the principal witness spelled in full; additional witnesses separated by '='. Organisation acronyms in parentheses, e.g. '(USAF)'. If identity is held in confidence by the investigator, the investigator's name is substituted in reverse parentheses, e.g. ')CUFOS('. In the public CD release, unpublished names are reduced to initials only."
+        },
+        "AST": {
+          "type": ["number", "null"],
+          "description": "Absolute Sidereal Time (4-digit integer, rounded to nearest hour). A computed measure of mean sidereal time calibrated to the meridian of Puy-de-Dôme, France (2.933°E, 45.766°N), which corresponds to the Right Ascension of Epsilon Eridani (3h 30m). AST=0 when the Epsilon Eridani plane is at the zenith of Puy-de-Dôme. Calculated using TZONE rather than exact coordinates."
+        },
+        "HYNEK": {
+          "type": ["string", "null"],
+          "maxLength": 3,
+          "description": "Hynek classification code (2–3 characters) based on J. Allen Hynek's UFO report typology (The UFO Experience, 1972), extended for UFOCAT. See full enum descriptions in crossCuttingEnumerations.UFOCATHynekExtended.",
+          "enum": ["NL","ND","NO","DD","DL","DO","RV","RR","CE1","CE2","CE3","CE4","AM","BH","CM","CR","MIB","TC",null]
+        },
+        "VALLEE": {
+          "type": ["string", "null"],
+          "maxLength": 3,
+          "description": "Vallée classification code (3 characters) based on Jacques Vallée's system (Confrontations, 1990). Four groups: AN (Anomalies, no UFO), FB (Flybys), CE (Close Encounters), MA (Manoeuvres), each with sub-types 1–5 indicating increasing severity/interaction. See full descriptions in crossCuttingEnumerations.ValleeFull.",
+          "enum": ["AN1","AN2","AN3","AN4","AN5","FB1","FB2","FB3","FB4","FB5","CE1","CE2","CE3","CE4","CE5","MA1","MA2","MA3","MA4","MA5",null]
+        },
+        "SVP": {
+          "type": ["string", "null"],
+          "maxLength": 3,
+          "description": "SVP Credibility Rating (3-digit code, developed by Vallée). Digit 1 = Source Reliability (S): 0=unknown/unreliable, 1=uncalibrated source, 2=reliable secondhand, 3=reliable firsthand, 4=firsthand interview by proven investigator. Digit 2 = Site Visit (V): 0=no visit, 1=casual visitor, 2=person familiar with phenomena, 3=reliable investigator, 4=skilled analyst. Digit 3 = Possible Explanations (P): 0=consistent with natural causes, 1=minor modification needed, 2=gross alteration of one parameter, 3=gross alteration of several parameters, 4=no natural explanation possible."
+        },
+        "TYPE": {
+          "type": ["string", "null"],
+          "maxLength": 12,
+          "description": "Type and sub-type of report (up to 12 characters). First character is a digit 0–9 representing the primary type (approximate strangeness scale). Remaining characters are letter sub-type codes. See crossCuttingEnumerations.UFOCATTypeSystem for the full key.",
+          "firstDigitEnum": {
+            "0": "Non-UFO event of ufological interest (nuclear tests, power failures, deaths, crop circles, etc.)",
+            "1": "Essentially stationary UFO throughout observation (motion ≤ 15°/hour = apparent stellar motion)",
+            "2": "Continuously moving UFO (speed > 15°/hour)",
+            "3": "Non-continuous trajectory with a single discontinuity (e.g. one sharp turn or hover pause)",
+            "4": "Non-continuous trajectory with multiple discontinuities (complex flight paths)",
+            "5": "UFO entered the frame of reference of the witness — encounter without landing (includes photo, radar, EM cases)",
+            "6": "UFO landed within the frame of reference of the witness (minimum separation ≤ major dimension of object)",
+            "7": "Occupants reported outside the object",
+            "8": "Intelligent communication reported (including telepathy; gesture/light repetition alone does not qualify)",
+            "9": "UFO caused lasting physical or functional effects in the witness or other animal life after the event"
+          }
+        },
+        "EXPL": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Explainability flag — the direct source's confidence in a conventional explanation. '=' = source is certain of a conventional explanation (identified in EXPLAN). '-' = source says report 'probably' or 'possibly' has a conventional explanation. blank = source offers no particular explanation. '+' = source implies report probably requires an unconventional explanation (used for Blue Book 'Unidentified' cases). '*' = source is virtually certain of an unconventional explanation; also assigned by coder when an official explanation is judged impossible.",
+          "enum": ["=", "-", "+", "*", null]
+        },
+        "EXPLAN": {
+          "type": ["string", "null"],
+          "maxLength": 10,
+          "description": "Explanation of the report as given by the direct source (10-character code). The most common explanation is that given by the source; may or may not be accurate. If multiple causes are possible, the more important one is recorded.",
+          "enum": [
+            "Aircraft","Animals","AnomProp","Aurora","Balloon","Birds","Blimp","Bolide",
+            "Cloud","Coincidenc","Comet","Debris","EM","FalseTarge","Fireball","Flare",
+            "Hallucinat","Helicopter","Hoax","Inversion","Junk","Jupiter","Lensflare",
+            "Light","Lights","Malfunct","Mars","Meteor","Mirage","Missile","Moon",
+            "Natural","Op-error","Planet","Prank","Psych","Quake","RadarChaff",
+            "Re-entry","Reflection","Rocket","Rumor","Satelite","Saturn","SpiderGoss",
+            "Star","Trawlers","Unreliable","Venus","Weather","Wind",null
+          ],
+          "enumDescriptions": {
+            "Aircraft":   "Airplane, helicopter, blimp, aircraft lights, or exhaust trail",
+            "Animals":    "Animals or traces left by terrestrial species",
+            "AnomProp":   "Anomalous Propagation (radar false return)",
+            "Aurora":     "Aurora borealis or australis",
+            "Balloon":    "Balloon (weather, research, or hot air)",
+            "Birds":      "Birds or traces left by birds",
+            "Blimp":      "Blimp or dirigible",
+            "Bolide":     "Slow-moving meteor",
+            "Cloud":      "Cloud(s)",
+            "Coincidenc": "Coincidence (film flaw, combination of other explanations)",
+            "Comet":      "Comet",
+            "Debris":     "Debris (space or atmospheric)",
+            "EM":         "Electromagnetic phenomenon (ball lightning, aurora)",
+            "FalseTarge": "False radar target",
+            "Fireball":   "Fireball or fiery meteor",
+            "Flare":      "Flare, flash bomb, or gun firing",
+            "Hallucinat": "Hallucination",
+            "Helicopter": "Helicopter",
+            "Hoax":       "Hoax (witness is the perpetrator)",
+            "Inversion":  "Temperature inversion",
+            "Junk":       "Manufactured by-product or debris",
+            "Jupiter":    "Planet Jupiter",
+            "Lensflare":  "Camera lens flare",
+            "Light":      "Single street light or other terrestrial light source",
+            "Lights":     "Multiple street lights, car headlights, or other terrestrial lights",
+            "Malfunct":   "Equipment malfunction",
+            "Mars":       "Planet Mars",
+            "Meteor":     "Meteor or meteorite (for trace cases)",
+            "Mirage":     "Atmospheric mirage",
+            "Missile":    "Missile track",
+            "Moon":       "Moon",
+            "Natural":    "Other natural phenomena (minerals, rocks, trees, plants)",
+            "Op-error":   "Operator error (radar)",
+            "Planet":     "Planet (unspecified)",
+            "Prank":      "Prank (witness is the victim of a hoax)",
+            "Psych":      "Psychological explanation (psychosis, delusion)",
+            "Quake":      "Earthquake",
+            "RadarChaff": "Radar chaff",
+            "Re-entry":   "Re-entry of orbiting satellite",
+            "Reflection": "Reflection of light phenomenon, sun dog",
+            "Rocket":     "Rocket launch or exhaust trail",
+            "Rumor":      "Rumor of an event that never occurred",
+            "Satelite":   "Orbiting satellite of terrestrial origin (note: spelled without double-t in UFOCAT)",
+            "Saturn":     "Planet Saturn",
+            "SpiderGoss": "Spider gossamer (spider silk floating in air)",
+            "Star":       "Star",
+            "Trawlers":   "Ships at sea (fishing boats, shrimp boat lights)",
+            "Unreliable": "Unreliable witness (see also Hoax)",
+            "Venus":      "Planet Venus",
+            "Weather":    "Weather phenomena",
+            "Wind":       "Wind"
+          }
+        },
+        "OBJS": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Number of objects (UFOs) reported (right-justified in 3 columns). '-' prefix = approximately; '+' prefix = at least; 'C' suffix = hundred; 'K' suffix = thousand. For processions (type 2P/3P) the maximum possible count is coded. For trace-only cases (type 0T) this is the number of trace marks. '0' = no object involved. Single-letter approximations: F=few, G=group, M=many, N=numerous, S=several."
+        },
+        "DUR": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Duration of observation. Normally in minutes (right-justified, '+' = at least). Seconds are expressed as decimal tenths of a minute with a leading '.'. Hours are suffixed 'H'; days suffixed 'D'. Special codes: B=brief, VB=very brief, .F=a few seconds, .S=several seconds, SH=several hours."
+        },
+        "SIZE": {
+          "type": ["integer", "null"],
+          "description": "Estimated physical size of the UFO — the base-2 logarithm of the largest dimension of the object in feet, at its closest approach. A negative value means the object was smaller than 1 foot. Conversion: SIZE=-2 → ~0.3 ft (8 cm); SIZE=0 → 1 ft; SIZE=5 → ~32 ft (10 m); SIZE=10 → ~1,000 ft (314 m); SIZE=13 → ~8,000 ft (2.5 km). Blank if not reported. For trace cases (type 0T), gives the size of the trace mark.",
+          "minimum": -2,
+          "maximum": 14
+        },
+        "ANGLSIZ": {
+          "type": ["string", "null"],
+          "maxLength": 3,
+          "description": "Apparent (angular) size of the UFO. A decimal-number code where '.0' = non-point source smaller than the moon, '.1' = angular size ≈ sun or moon, '.2' = twice the sun/moon, '.3' = three times, etc.; '.' alone = strictly a point source. Qualitative codes using Poher's system (preceded by '('): (A = 'immense/huge'; (B = quarter-coin at arm's length; (C = orange at arm's length; (D = melon/plate; (E = 40 cm (pumpkin); (F = 1 metre; (G = 2 metres; (H = size of a commercial aircraft."
+        },
+        "DIST": {
+          "type": ["integer", "null"],
+          "description": "Distance from the UFO at closest approach — the base-2 logarithm of the shortest distance in feet. DIST=-1 → witness touched the UFO (~0.5 ft); DIST=5 → ~32 ft (10 m); DIST=8 → ~256 ft (78 m); DIST=11 → ~0.5 mile (627 m); DIST=14 → ~16,000 ft (5 km). Field added 1998; blank for most earlier records.",
+          "minimum": -1,
+          "maximum": 14
+        },
+        "COLOR": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Principal colour of the UFO (8-character code). For multiple objects, the largest object is coded. Two or more colours, or multi-coloured lights, are coded 'Multi'. 'Changed' indicates colour change during the sighting. 'Reddish orange' is coded 'Orange'.",
+          "enum": [
+            "Aluminum","Amber","Beige","Black","Blue","BluGray","BluGreen","Bluish",
+            "Bright","Bronze","Brown","Changed","Chrome","Clear","Copper","Dark",
+            "Fire","Fluoresc","Glowing","Gold","Gray","Green","Luminous","Metallic",
+            "Multi","Orange","Pearl","Phosphor","Pink","Red","Rust","Shiny","Silver",
+            "Tan","Transpar","Violet","White","Yellow","Zinc",null
+          ]
+        },
+        "SHAPE": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Principal shape of the UFO (8-character code). For multiple objects, the largest is coded. 'Polymorf' = shape-changing object. 'V-Shape' includes boomerang shapes. 'Polygon' covers all multi-sided objects (hexagon, pentagon, octagon, etc.).",
+          "enum": [
+            "Aircraft","Arrow","Badge","Ball","Banana","Bat","Beam","Beehive","Blimp",
+            "Bottle","Bowl","BowTie","Box","Bulb","Bullet","Capsule","Cigar","Circle",
+            "Circular","Cloud","Cone","Copter","Crescent","Cross","Crown","Cube",
+            "Cylinder","Delta","Diamond","Dirigibl","Disc","DomeDisc","Dumbell",
+            "Ellipse","Elliptic","Elongate","FanBlade","Fish","Flare","Flash",
+            "Football","Fuselage","Globe","Hemisphr","L-Shape","Lampshad","Lens",
+            "Light","Lights","Linear","Lozenge","MantaRay","Missile","Object","Oblong",
+            "Odd","Orb","Oval","Ovoid","Pear","Polygon","Polymorf","Pyramid","Rectangl",
+            "Ring","Rocket","Round","Saturn","Schliere","Sparks","Sphere","Spindle",
+            "Square","Star","T-Shape","Teardrop","Top","Torpedo","Triangle","Tube",
+            "V-Shape","Walnut","Wedge","Wing","X-Shape","Y-Shape",null
+          ]
+        },
+        "SOUND": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Sound associated with the UFO (8-character code). 'NoSound' = explicitly reported as silent (54% of coded records). 'Noise' = generic sound without further specification (25%). Field added 1998; blank for most earlier records.",
+          "enum": [
+            "AirCondn","Aircraft","Beater","Beeping","Bloop","Blowing","Boom","Booms",
+            "Buzzing","Chirring","Chorus","Clack","Clatter","Copter","Crying","Diesel",
+            "Drill","Droning","ElecMotr","Electric","Engine","Explosn","Faint",
+            "FuseBurn","Grinding","Growling","Highpitc","Hissing","Humming","Intense",
+            "Jet","Jets","Knock","Loud","LoudPop","LowHum","Masked","Metallic",
+            "Moaning","Motor","Noise","NoSound","Odd","Oscillat","Popping","Pulsate",
+            "Pulsing","Purring","Quake","Rain","Revving","Roar","Roaring","Rumbling",
+            "Rustling","Scraping","SewingMa","Shrill","Sizzling","Sonar","Sputter",
+            "Squeaks","Steady","Steam","Strange","Swishing","Thrashin","Throb","Thud",
+            "Thunder","Ticktick","Tones","Train","TuneFork","Turbine","Tweeting",
+            "Unusual","Vacuum","Whine","Whining","Whirring","Whistle","Whooping",
+            "Whoosh","Wind","WoooWooo",null
+          ]
+        },
+        "LONGITUDE": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Longitude of the sighting location (up to 8 characters). In the default English system: West and North are positive; East and South are negative. Decimal point in 5th column = decimal degrees. Apostrophe in 5th column = degrees and minutes. Coordinate system identified by X3 field."
+        },
+        "X3": {
+          "type": ["string", "null"],
+          "maxLength": 1,
+          "description": "Coordinate system flag for LONGITUDE and LATITUDE. Blank = English System (360° full circle, zero meridian at Greenwich; West/North positive). 'M' = French Metric System (400° full circle, zero meridian at Notre-Dame de Paris; West/North positive). 'Q' = English System but coordinates are questionable and unchecked. '=' = coordinates are known to be in error. British National Grid System is indicated by two letters in the first two columns of LATITUDE.",
+          "enum": [null, "M", "Q", "="]
+        },
+        "LATITUDE": {
+          "type": ["string", "null"],
+          "maxLength": 8,
+          "description": "Latitude of the sighting location (up to 8 characters). Sign and format as described for LONGITUDE. Two-letter prefix in columns 1–2 indicates use of the British National Grid System (100 km squares east/north from a base point southwest of Land's End, Cornwall)."
+        },
+        "NOTES": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "Free-text narrative (up to 200 characters) describing key aspects of the UFO report, useful for full-text search. Added 1998; only a minority of records contain this field. May also contain explanatory phrases for absent coordinates: 'Various Sites' (multiple locations), 'More than One' (ambiguous place-name), 'No Such Place' (fictitious or erroneous place-name)."
+        },
+        "Ufonaut": {
+          "type": ["string", "null"],
+          "maxLength": 16,
+          "description": "Classification of the type of UFO humanoid or alien entity reported (up to 16 characters). Added 2002. Blank if no entity was observed."
+        },
+        "Height": {
+          "type": ["number", "null"],
+          "description": "Reported height of the Ufonaut in feet. Added 2002. Blank if no entity was observed or height was not reported."
+        },
+        "Uniform": {
+          "type": ["string", "null"],
+          "maxLength": 16,
+          "description": "Description of the uniform or clothing worn by the Ufonaut (up to 16 characters). Added 2002. Blank if no entity was observed."
+        },
+        "LST": {
+          "type": ["number", "null"],
+          "description": "Local Sidereal Time — the sidereal time at the specific geographic location of the sighting, as opposed to AST which is calibrated to Puy-de-Dôme France. Stored as a number; also encoded as a string prefixed 'RA' in the USER_DEFINED field."
+        },
+        "USER_DEFINED": {
+          "type": ["string", "null"],
+          "maxLength": 32,
+          "description": "User-defined field (up to 32 characters) available for custom labels or search keys. Currently contains Local Sidereal Time (LST) prefixed with 'RA' (Right Ascension reference). Can be repurposed by researchers for project-specific tagging."
+        }
+      }
+    },
+
+    "CUCO": {
+      "$comment": "CUCO (Comité de Usuarios de Cielos para Observar) — Spanish UAP catalogue. Folder: (ES) CUCO. Primary file: CUCO structure and sample.xls (small sample file, ~107 KB).",
+      "rowCount": "small sample only (full database not present in Drive folder)",
+      "format": "XLS",
+      "language": "ES",
+      "$note": "Only a structure-and-sample file is present. Full CUCO database is hosted at proyecto-cuco.blogspot.com. Column schema requires XLS parsing. Based on the filename and CUCO methodology, expected fields include case ID, date, time, location, province, country, shape, duration, number of witnesses, source, and description."
+    },
+    "UFOCAT": {
+      "$comment": "UFOCAT 2023 — J. Allen Hynek Center for UFO Studies (CUFOS) / Sun River Research Institute. The most comprehensive multi-source UFO bibliographic database in existence, originally begun by Dr. David R. Saunders during the 1967 USAF-sponsored Colorado UFO Project (Condon Committee). UFOCAT 2023 contains over 120,000 records drawn from hundreds of sources. Database format: Microsoft Access 97 (.mdb). Primary table has 49 fields per record. Codebook: Johnson, D.A. & Saunders, D.R., 'UFOCAT 2023 User's Guide', April 2023, Sun River Research Institute, Bow NH.",
+      "rowCount": "120,000+",
+      "primaryKey": "URN",
+      "format": "Microsoft Access 97 (.mdb)",
+      "language": "EN",
+      "columns": {
+        "PRN": {
+          "type": "number",
+          "description": "Primary Record Number — points to the URN of the most primary source record for a given event. Filtering by PRN groups all references to the same event. The chronologically earliest or most complete account is the primary record."
+        },
+        "X2": {
+          "type": "number",
+          "description": "Handedness / order of primacy within a block of records for the same event",
+          "enum": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "enumDescriptions": {
+            "0": "Primary record — the most authoritative source for this event; use this value to count events without double-counting",
+            "1": "Independent investigation of the same event, not chosen as primary",
+            "2": "References the primary source or another source — secondary source",
+            "3": "References only a secondary source — tertiary, furthest removed from original"
+          }
+        },
+        "IRN": {
+          "type": "number",
+          "description": "Indirect Record Number — points to the URN most closely associated with the source cited by the author. Blank if the author is the primary source."
+        },
+        "X1": {
+          "type": "string",
+          "description": "Confidence of match between URN and IRN (legacy field from earlier UFOCAT version)",
+          "enum": [
+            "=",
+            "-",
+            ""
+          ],
+          "enumDescriptions": {
+            "=": "Clear match between the record and its indirect source",
+            "-": "Possible match (uncertain linkage)",
+            "": "Primary record — no indirect source"
+          }
+        },
+        "URN": {
+          "type": "number",
+          "description": "UFOCAT Record Number — permanent, unique reference number assigned to every record in the database. Never changes across releases."
+        },
+        "AUTHOR": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Surname of first author or UFO investigator responsible for the source, listed surname-first. May contain editor name, journal name, or organisation name if the author is unknown."
+        },
+        "LEVEL": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Level of entry / source type (numeric 0–9 or alphabetic blank for non-event records)",
+          "enum": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            ""
+          ],
+          "enumDescriptions": {
+            "9": "List only — no narrative, possibly computerised. Within-source ID = serial number assigned by original compiler.",
+            "8": "Revised, paperback, or translated edition of a book (cf. Level 7). Page numbers may differ from first edition.",
+            "7": "First edition of a book or monograph in the author's native language. Within-source ID = page number.",
+            "6": "Author's personal files (unpublished). Within-source ID unpredictable.",
+            "5": "Periodical devoted primarily to ufology. Within-source ID = Year/Month/Page.",
+            "4": "General-circulation periodical, newspaper, or magazine. Within-source ID = Year/Month/Day.",
+            "3": "Investigations file — most preferred; most complete, fewest inaccuracies. Witness names publicly available.",
+            "2": "Investigations file — witness names automatically confidential; some detailed data confidential.",
+            "1": "Investigations file — entire case confidential; may appear only as a statistical tally.",
+            "0": "Investigations file — confidentiality status not yet determined.",
+            "": "Record does not refer to a UFO event (any alphabetic code also indicates this)"
+          }
+        },
+        "SOURCE": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "12-character mnemonic code identifying the direct source (investigation file, periodical, or book). Format for individual authors: first-initial + surname + optional publication number. Used with PAGEVOL to locate the original documentation. See Appendix A of the codebook for the full reference index."
+        },
+        "PAGEVOL": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Position within the source (page number, sequential number, acquisition number, or date-based code). Scheme depends on LEVEL: Scheme 1 (LEVEL 7/8) = page number; Scheme 2 (LEVEL 9) = sequential 3–4 digit number; Scheme 3 = acquisition number for small unpublished files; Scheme 4 (LEVEL 5) = YYYYMMPP (year/month/page); Scheme 5 = YYYYMMDD (year/month/day for chronological files); Scheme 6 = blank for small unpublished files."
+        },
+        "ISOURCE": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "12-character code for the indirect source — the source cited or credited by the direct source author. Used to group records about the same event and identify primary entries. Special punctuation codes indicate witness-level source quality",
+          "specialCodes": {
+            "*": "Indirect source is a first-hand written on-scene investigation report by the investigator",
+            "+": "Indirect source is a standardised report form completed by or with the witness",
+            "'": "Indirect source is a first-hand witness description published in a scientific journal",
+            ".": "Indirect source is a letter from the witness, or an unstructured interview (e.g. by a newspaper reporter)",
+            ",": "Indirect source is a published account in a newspaper or non-scientific periodical; also used for wire-service stories"
+          }
+        },
+        "IPAGEVOL": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Position within the indirect source — same scheme conventions as PAGEVOL."
+        },
+        "YEAR": {
+          "type": "string",
+          "maxLength": 4,
+          "description": "Year of the UFO event (4 characters). Precise year = 4-digit integer (e.g. '1975'). If exact year unknown, last character codes the precision: '.' = decade known only (e.g. '196.' = sometime in the 1960s); 'E' = early in the decade; 'M' = middle of the decade; 'L' = late in the decade (e.g. '196L' = late 1960s, possibly 1968–1969)."
+        },
+        "MO": {
+          "type": "string",
+          "maxLength": 2,
+          "description": "Month of the event ('01'–'12'). If month unknown, first column blank; second column may be: 'E' = Early (Jan–Apr), 'F' = Fall (Oct–Dec), 'L' = Late (Sep–Dec), 'M' = Middle/Summer (May–Aug), 'S' = Spring (Apr–Jun), 'W' = Winter (Jan–Mar)."
+        },
+        "DAY": {
+          "type": "string",
+          "maxLength": 2,
+          "description": "Day of the event ('01'–'31'). If day unknown, first column blank; second column may be: 'E' = Early (approx. first week), 'M' = Middle, 'L' = Late (approx. last week)."
+        },
+        "TIME": {
+          "type": "string",
+          "maxLength": 5,
+          "description": "Time of event onset (HHMM in 24-hour format, e.g. '2030'). If hour unknown, field contains a descriptor: 'Day'=daytime, 'Night'=night, 'Morn'=morning, 'After'=afternoon, 'Even'=evening, 'Dawn'=sunrise/dawn, 'Noon'=noon, 'Dusk'=sunset/dusk, 'MidD'=midday, 'MidN'=midnight, 'Pdawn'=predawn. If minute uncertain, third column codes: '-' = early/before the hour, '+' = late/after the hour."
+        },
+        "TZ": {
+          "type": "string",
+          "maxLength": 2,
+          "description": "Flag field for date/time accuracy and time-scale",
+          "enum": [
+            "*",
+            "+",
+            ".",
+            "-",
+            "'",
+            "=",
+            ""
+          ],
+          "enumDescriptions": {
+            "*": "Date/time coded in GMT (= Universal Time = Z-time); local date may differ",
+            "+": "Date/time coded in local daylight-saving time (one hour ahead of standard time)",
+            ".": "Date/time explicitly confirmed as local standard time",
+            "-": "Date is approximate (± one or two days); excludes record from chronological analysis",
+            "'": "Date is a date-of-publication — to be read as 'not later than'",
+            "=": "Date is as given by the direct source but is believed or known to be in error; also excludes record from chronological analysis"
+          }
+        },
+        "TZONE": {
+          "type": "number",
+          "description": "Time zone of the event as an integer offset from GMT noon (12 hours), used to compute Universal Time or Sidereal Time. US continental codes: 4=Pacific Standard, 5=Mountain Standard, 6=Central Standard, 7=Eastern Standard. Range: 1 (American Samoa) through 24 (New Zealand/Fiji). Half-zone values (e.g. 8.5=Newfoundland, 15.5=Iran, 17.5=India, 21.5=South Australia) are used for regions with non-integer UTC offsets."
+        },
+        "WEA": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Weather conditions at time of sighting (not systematically reported; most complete in primary investigation files)",
+          "enum": [
+            "Calm",
+            "Clear",
+            "Clouds",
+            "Cloudy",
+            "Fog",
+            "Ice",
+            "Muddy",
+            "Overcast",
+            "Partial",
+            "Rain",
+            "Snow",
+            "Storm",
+            "Thunder",
+            "Undrcast"
+          ]
+        },
+        "TER": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Local terrain or landmark in the vicinity of the UFO event (applies regardless of whether terrain figures directly in the sighting). ~100+ values; major examples include: Airfield, Airport, Building, City, Electric (power facility), Farm, Forest, Highway, Lake, Military, Mine, Mountain, Nuclear, Ocean, Railroad, River, Road, Shore, Warplane, Yard. Full list in codebook Table 5.",
+          "examples": [
+            "Airfield",
+            "Airport",
+            "Building",
+            "City",
+            "Electric",
+            "Farm",
+            "Forest",
+            "Highway",
+            "Lake",
+            "Military",
+            "Mine",
+            "Mountain",
+            "Nuclear",
+            "Ocean",
+            "Railroad",
+            "River",
+            "Road",
+            "Shore",
+            "Warplane",
+            "Yard"
+          ]
+        },
+        "VFLG": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Vehicle flag — special location of the witness(es) during at least some portion of the sighting. Priority given to code furthest down the list when multiple conditions apply.",
+          "enum": [
+            "(",
+            "'",
+            ",",
+            ".",
+            "#",
+            ""
+          ],
+          "enumDescriptions": {
+            "(": "Witness(es) located in an orbiting spacecraft",
+            "'": "Witness(es) located in a flying aircraft",
+            ",": "Witness(es) located in a boat (on water)",
+            ".": "Witness(es) in a moving automobile or motorcycle during at least some portion of the sighting",
+            "#": "Airborne witness(es) in communication with surface-based witness(es) during the actual sighting",
+            "": "No special vehicle condition"
+          }
+        },
+        "LOCATION": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Geographic place-name of the UFO event (city, town, or village). Place-name listed first, modifiers after (e.g. 'LOUISVILLE SW 10M' not '10M SW LOUISVILLE'). Two locations separated by '=' indicate between two places (closer one first). 'SAINT'/'SAINTE' abbreviated to 'ST'/'STE'. Coordinates from this field may be assigned to the LONGITUDE/LATITUDE fields."
+        },
+        "LFLG": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Flag for location accuracy or coordinate interpretation",
+          "enum": [
+            "-",
+            "+",
+            "*",
+            "=",
+            ""
+          ],
+          "enumDescriptions": {
+            "-": "Location is approximate (e.g. 'near Los Angeles', 'Baltimore area')",
+            "+": "Coordinates in LONGITUDE/LATITUDE are the specific witness location for this sighting",
+            "*": "Coordinates in LONGITUDE/LATITUDE are the specific location of the phenomenon, determined from traces or strong evidence",
+            "=": "Place-name is given by the direct source but is believed or known to be in error (would locate event in wrong county)",
+            "": "Standard location — coordinates refer to the named place"
+          }
+        },
+        "REGION": {
+          "type": "string",
+          "maxLength": 2,
+          "description": "World region abbreviation for the continent, ocean, or major region where the event occurred",
+          "enum": [
+            "A",
+            "AA",
+            "AF",
+            "AS",
+            "AU",
+            "CA",
+            "CN",
+            "EU",
+            "I",
+            "M",
+            "ME",
+            "NA",
+            "P",
+            "SA",
+            "US",
+            "W",
+            "XX",
+            "RE"
+          ],
+          "enumDescriptions": {
+            "A": "Atlantic Ocean, including Iceland",
+            "AA": "Antarctica",
+            "AF": "Africa",
+            "AS": "Asia",
+            "AU": "Australia and Oceania, including Papua New Guinea",
+            "CA": "Central America, including Puerto Rico",
+            "CN": "Canada",
+            "EU": "Europe, including Russia west of the Ural Mountains",
+            "I": "Indian Ocean",
+            "M": "Mediterranean Sea",
+            "ME": "Middle East",
+            "NA": "North America (unspecified US or Canada)",
+            "P": "Pacific Ocean, including Hawaii",
+            "SA": "South America",
+            "US": "United States, excluding Hawaii and Puerto Rico",
+            "W": "World (unspecified location)",
+            "XX": "Outer Space",
+            "RE": "Roman Empire (historical cases)"
+          }
+        },
+        "STATE": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "State or country code. US states and DC use 2-letter USPS ZIP abbreviations (e.g. 'CA', 'NY'). Canadian provinces and Australian states also use distinct 2-letter codes. Countries use 3-letter codes. Continents, oceans, and seas use 1–2 letter codes. Full list in Appendix B of the codebook and the WORLD.DBF table."
+        },
+        "COUNTY": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "County or province of the event. For US events, uses the ~3,150 US county names to provide fine-grained geographic classification. Two records of the same event in the same county on the same date are treated as duplicates in statistical summaries."
+        },
+        "WITNESSES": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Number of witnesses. Normally a right-justified integer with leading blanks. Prefixes: '-' = about, '+' = at least. Suffixes: 'C' = hundred, 'K' = thousand. Letter codes for vague counts: 'F'=few, 'G'=group, 'M'=many/multiple, 'N'=numerous, 'S'=several."
+        },
+        "AGE": {
+          "type": "string",
+          "maxLength": 2,
+          "description": "Age of the principal witness in years, or group composition code. Group composition: first character = number of families represented; second character = 'A'=adult (mixed/unknown marital status), 'C'=children, 'T'=teenager, 'S'=single adults, 'M'=married adults, 'X'=mixed Y and W, 'Y'=young (under 20, mixed C and T), 'W'=all over 20 (mixed S and M). Spotty for records below URN 81,000."
+        },
+        "SEX": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Sex of the principal witness or group composition",
+          "enum": [
+            "M",
+            "F",
+            "C",
+            "X",
+            ""
+          ],
+          "enumDescriptions": {
+            "M": "All witnesses are male",
+            "F": "All witnesses are female",
+            "C": "Couple (husband and wife; children may also be present)",
+            "X": "Mixed — any other defined situation",
+            "": "Data missing or uncoded"
+          }
+        },
+        "MIS": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Military/police/data-error flag",
+          "enum": [
+            "#",
+            "+",
+            "=",
+            ""
+          ],
+          "enumDescriptions": {
+            "#": "Witness(es) were military personnel",
+            "+": "Witness(es) were police officers",
+            "=": "Witness name as copied from source is incorrect or misspelled",
+            "": "No special flag"
+          }
+        },
+        "NAMES": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Last name(s) of witness(es). Surname of principal witness first (spelled in full); additional witnesses separated by '='. Confidential/unpublished names reduced to initial only. Organisation names in parentheses e.g. '(USAF)'. Investigator name substituted for confidential witness and enclosed in reverse parentheses e.g. ')CUFOS('."
+        },
+        "AST": {
+          "type": "number",
+          "description": "Absolute Sidereal Time (AST) — computed field. A measure of mean sidereal time calibrated so that AST midnight (0h) occurs when the celestial plane through Epsilon Eridani (3h 30m RA) is aligned with the zenith at Puy de Dôme, France (2.933°E, 45.766°N). Stored as a 4-digit integer rounded to the nearest hour. Computed from TZONE rather than precise coordinates. Useful for testing whether UAP sightings correlate with sidereal (star-fixed) time rather than solar time."
+        },
+        "HYNEK": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "Hynek UFO classification code (J. Allen Hynek, 'The UFO Experience', Henry Regnery, 1972, with extensions)",
+          "enum": [
+            "NL",
+            "ND",
+            "NO",
+            "DD",
+            "DL",
+            "DO",
+            "RV",
+            "RR",
+            "CE1",
+            "CE2",
+            "CE3",
+            "CE4",
+            "AM",
+            "BH",
+            "CM",
+            "CR",
+            "MIB",
+            "TC"
+          ],
+          "enumDescriptions": {
+            "NL": "Nocturnal Light — unstructured light seen at night",
+            "ND": "Nocturnal Disc — structured disc-shaped object seen at night",
+            "NO": "Nocturnal Object — structured nocturnal object with definite physical features (not disc-shaped)",
+            "DD": "Daylight Disc — disc-shaped object seen in daylight",
+            "DL": "Daylight Light — unstructured light seen in daylight",
+            "DO": "Daylight Object — structured daylight object not disc-shaped",
+            "RV": "Radar-Visual — object detected on radar and confirmed visually",
+            "RR": "Radar — object detected on radar only (no visual confirmation)",
+            "CE1": "Close Encounter of the First Kind — within approximately 150 m, no physical effects",
+            "CE2": "Close Encounter of the Second Kind — with physical effects on environment, vehicles, or witnesses",
+            "CE3": "Close Encounter of the Third Kind — entity or occupant reports",
+            "CE4": "Close Encounter of the Fourth Kind — abduction reports (Note: in Vallée classification CE4=contactee cases)",
+            "AM": "Animal mutilation (non-cattle)",
+            "BH": "Black/mystery helicopter sighting",
+            "CM": "Cattle mutilation report",
+            "CR": "Crashed disc retrieval account",
+            "MIB": "Men in Black incident — military imposters, mystery investigators, or interference with report investigation",
+            "TC": "Physical trace report without associated UFO sighting (e.g. crop circles)"
+          }
+        },
+        "VALLEE": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "Vallée UFO classification code (Jacques Vallée, 'Confrontations', Ballantine, 1990). Four groups: Anomalies (AN), Flybys (FB), Close Encounters (CE), and Maneuvers (MA). Digits 1–5 indicate severity/complexity. Note: CE4 in Vallée = contactee cases; CE4 in Hynek = abduction reports.",
+          "enum": [
+            "AN1",
+            "AN2",
+            "AN3",
+            "AN4",
+            "AN5",
+            "FB1",
+            "FB2",
+            "FB3",
+            "FB4",
+            "FB5",
+            "CE1",
+            "CE2",
+            "CE3",
+            "CE4",
+            "CE5",
+            "MA1",
+            "MA2",
+            "MA3",
+            "MA4",
+            "MA5"
+          ],
+          "enumDescriptions": {
+            "AN1": "Anomaly with no lasting physical effects (amorphous lights, unexplained explosions)",
+            "AN2": "Anomaly with lasting physical effects (poltergeist phenomena, apports, flattened grass)",
+            "AN3": "Anomaly with associated entities (ghosts, Bigfoot, dwarfs)",
+            "AN4": "Anomalous personal interaction with entities in their own reality, including out-of-body experiences",
+            "AN5": "Anomalous injuries or deaths (spontaneous combustion, unexplained wounds, permanent healing)",
+            "FB1": "Simple flyby — UFO seen flying past or hovering stationary",
+            "FB2": "Flyby accompanied by physical evidence",
+            "FB3": "Flyby with observation of occupants on board",
+            "FB4": "Flyby where witness experienced a transformation of reality",
+            "FB5": "Flyby in which witnesses suffered permanent injuries",
+            "CE1": "Close encounter with no physical effects",
+            "CE2": "Close encounter with physical effects (EM interference, physical traces)",
+            "CE3": "Close encounter with associated entities seen near a UFO",
+            "CE4": "Close encounter with personal interaction with entities (contactee cases in Vallée system)",
+            "CE5": "Close encounter resulting in permanent injuries or deaths",
+            "MA1": "Manoeuvring UFO with discontinuous trajectory",
+            "MA2": "Discontinuous-trajectory UFO giving rise to physical effects",
+            "MA3": "Manoeuvring UFO with observation of occupants on board",
+            "MA4": "Manoeuvres accompanied by a sense of transformation of reality for the witness",
+            "MA5": "Manoeuvring UFO in which witnesses suffered permanent injuries"
+          }
+        },
+        "SVP": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "SVP Credibility Rating (Vallée system) — 3-digit code assessing report quality across three independent axes. Format: S (Source Reliability) V (Site Visit) P (Possible Explanations), e.g. '342' = reliable firsthand source, site visited by a skilled analyst, natural explanation requires gross alteration of one parameter.",
+          "digits": {
+            "S_sourceReliability": {
+              "0": "Unknown or unreliable source",
+              "1": "Known source of uncalibrated reliability",
+              "2": "Reliable source, secondhand",
+              "3": "Reliable source, firsthand",
+              "4": "Firsthand personal interview with a witness of proven reliability, conducted by a source of proven reliability"
+            },
+            "V_siteVisit": {
+              "0": "No site visit, or unknown",
+              "1": "Site visit by a casual person unfamiliar with such phenomena",
+              "2": "Site visit by persons familiar with such phenomena",
+              "3": "Site visit by a reliable investigator with some experience",
+              "4": "Site visit by a skilled analyst"
+            },
+            "P_possibleExplanations": {
+              "0": "Data consistent with one or more natural causes",
+              "1": "Natural explanation requires only slight modification of the data",
+              "2": "Natural explanation requires gross alteration of one parameter",
+              "3": "Natural explanation requires gross alteration of several parameters",
+              "4": "No natural explanation possible given the evidence"
+            }
+          }
+        },
+        "TYPE": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Type and sub-type of report. First character is a strangeness scale digit (0–9); subsequent characters are sub-type letter codes (see table below). Reports are assigned the highest applicable type. Combined field e.g. '5EW' = encounter report (5) with EM effect (E) and independent witnesses (W).",
+          "typeDigits": {
+            "0": "Not a UFO report — has ufological interest but direct source does not consider it a UFO (non-UFO events: nuclear tests, power failures, deaths of UFO figures, crop circle discoveries)",
+            "1": "UFO essentially stationary throughout observation (motion ≤ 15°/hour, equivalent to apparent stellar motion)",
+            "2": "UFO moved in a continuous trajectory at speed > 15°/hour",
+            "3": "UFO moved in a non-continuous trajectory with a single discontinuity (one sharp turn or hover)",
+            "4": "UFO moved in a non-continuous trajectory with multiple discontinuities (complex trajectory)",
+            "5": "UFO 'entered the frame of reference' of the witness — encounter, photo, radar, EM, or self-investigated",
+            "6": "UFO 'landed' within the frame of reference — minimum ground separation ≤ major dimension of the object",
+            "7": "One or more occupants reported outside the object (occupant-only = Type 7 with 0 objects)",
+            "8": "Intelligent communication associated with the experience (language level, including telepathy; mere gestures do not qualify)",
+            "9": "Lasting physical or functional effects in the witness or other life forms after the UFO is gone (abduction, missing time, cattle mutilation, contactee syndrome excluded)"
+          },
+          "selectedSubtypeCodes": {
+            "A": "Acrobatics (5A); Aircraft-like behaviour (2A); Abduction/disappearance (9A)",
+            "B": "Buzzing (5B); Balloon-like behaviour (1B, 2B); Teleportation/abduction and return (9B)",
+            "C": "Chasing/pacing (5C); Cloud-cigar (2C, 3C, 4C); Contact effects (9C)",
+            "D": "Disc shape (2D, 3D, 4D, 5D); Death (9D)",
+            "E": "EM electromagnetic effect (1E, 5E); Electromagnetic phenomena (0E)",
+            "F": "Fireball (2F); Other functional effects (9F)",
+            "G": "Green fireball (2G); Gravity/strange-field effect — 'mass displacement' (5G)",
+            "H": "Hovered (3H); Multiple hovering (4H); Sketch present (5H); Healing effects (9H)",
+            "I": "Instrumented observation (2I, 5I)",
+            "J": "Jupiter (1J)",
+            "K": "Interference with investigation (5K); Men in Black incident (8K)",
+            "L": "Landed remotely (3L); Falling leaf maneuver (4L); Moon (1L); Lapse of time (9L); Unintelligible language (7L)",
+            "M": "Mars (1M); Animals present (5M); Monster — non-humanoid or giant (7M); Animal mutilation (9M); Multiple hovering (4H)",
+            "N": "Noise/sound (5N); Artificial cloud (0N); Numerous",
+            "O": "Inside occupant (5O); Occupants involved (9O); Ring or circle (5_O)",
+            "P": "Power failures (0P); Physiological effects transient (5P); Sun (1P)",
+            "Q": "Earthquakes (0Q); Quantitative analysis (5Q)",
+            "R": "Satellite re-entries (0R); Radar without visual (5R); Multiple radar (5RR); Remote (ray) effects (9R)",
+            "S": "Star (1S); Still picture (5S); Disc photo (5SD); Movies (5SM); Structured photo (5SS); Several",
+            "T": "Physical traces (5T, 5TT, 5TU); Angel hair (3TG); Trace-handling effects (9T)",
+            "V": "Venus (1V); Radar/visual confirmation (5V); Rocket launches (0V)",
+            "W": "Independent witnesses (3W, 4W, 5W); Weather phenomena (0W)",
+            "X": "Explosion in place (1X); Bolide (2X); Exploded (3X); Explosion(s) (9X); Explosions/skyquakes (0X)",
+            "Y": "Angel hair residue (4Y); Psychic effects/hypnotic testimony (5Y); Hypnotic effects (9Y)",
+            "Z": "Crescent shape (2Z, 3Z); Zigzag maneuver (4ZZ, 5ZZ); Miscellaneous accidents (9Z)",
+            "^": "Vertical ascent (4^, 5^)"
+          }
+        },
+        "EXPLN": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Explainability flag — indicates the direct source's direction and certainty of explanation",
+          "enum": [
+            "=",
+            "-",
+            "",
+            "+",
+            "*"
+          ],
+          "enumDescriptions": {
+            "=": "Source is certain the report has a conventional explanation (identified in EXPLAN). Applied to most Project Blue Book entries.",
+            "-": "Source says the report 'probably' or 'possibly' has a conventional explanation (identified in EXPLAN).",
+            "": "Source offers no particular explanation. Used for Blue Book 'insufficient information' cases.",
+            "+": "Source says or implies the report probably requires an unconventional explanation — a 'better than average' UFO report. Applied to all Blue Book 'unidentified' or 'unknown' cases.",
+            "*": "Source is virtually certain the report requires an unconventional explanation — the case can 'stand on its own'. Also used when the official explanation is judged impossible by the coder."
+          }
+        },
+        "EXPLAN": {
+          "type": "string",
+          "maxLength": 10,
+          "description": "Explanation code or abbreviation for the conventional explanation given by the direct source (may or may not be accurate). When multiple causes are possible, the most important is recorded.",
+          "enum": [
+            "Aircraft",
+            "Animals",
+            "AnomProp",
+            "Aurora",
+            "Balloon",
+            "Birds",
+            "Blimp",
+            "Bolide",
+            "Cloud",
+            "Coincidenc",
+            "Comet",
+            "Debris",
+            "EM",
+            "FalseTarge",
+            "Fireball",
+            "Flare",
+            "Hallucinat",
+            "Helicopter",
+            "Hoax",
+            "Inversion",
+            "Junk",
+            "Jupiter",
+            "Lensflare",
+            "Light",
+            "Lights",
+            "Malfunct",
+            "Mars",
+            "Meteor",
+            "Mirage",
+            "Missile",
+            "Moon",
+            "Natural",
+            "Op-error",
+            "Planet",
+            "Prank",
+            "Psych",
+            "Quake",
+            "RadarChaff",
+            "Re-entry",
+            "Reflection",
+            "Rocket",
+            "Rumor",
+            "Satelite",
+            "Saturn",
+            "SpiderGoss",
+            "Star",
+            "Trawlers",
+            "Unreliable",
+            "Venus",
+            "Weather",
+            "Wind"
+          ],
+          "enumDescriptions": {
+            "Aircraft": "Airplane, helicopter, blimp, aircraft lights, or exhaust trail",
+            "Animals": "Animals or traces left by terrestrial species",
+            "AnomProp": "Anomalous Propagation (radar false return caused by atmospheric ducting)",
+            "Aurora": "Aurora borealis or aurora australis",
+            "Balloon": "Balloon of any type",
+            "Birds": "Birds or traces left by birds",
+            "Blimp": "Blimp or dirigible",
+            "Bolide": "Slow moving meteor (fireball)",
+            "Cloud": "Cloud(s)",
+            "Coincidenc": "Coincidence — film flaw, combination of other explanations",
+            "Debris": "Debris",
+            "EM": "Electromagnetic phenomena (ball lightning, aurora borealis)",
+            "FalseTarge": "False radar target",
+            "Flare": "Flare, flash bomb, gun firing, or fire",
+            "Hallucinat": "Hallucination",
+            "Hoax": "Hoax (witness is the perpetrator)",
+            "Inversion": "Temperature inversion (causing mirage or anomalous radar propagation)",
+            "Junk": "Manufactured by-product or debris",
+            "Lensflare": "Lens flare (photographic artefact)",
+            "Malfunct": "Equipment malfunction",
+            "Meteor": "Meteor (or meteorite for trace cases)",
+            "Mirage": "Mirage",
+            "Natural": "Other natural phenomena (minerals, rocks, trees or plants)",
+            "Op-error": "Operator error (radar)",
+            "Planet": "Planet (unspecified)",
+            "Prank": "Prank (witness is the victim of a hoax)",
+            "Psych": "Psychological explanation (psychosis, delusion, etc.)",
+            "Quake": "Earthquake",
+            "RadarChaff": "Radar chaff (metallic strips released as countermeasures)",
+            "Re-entry": "Re-entry of an orbiting satellite or spacecraft",
+            "Reflection": "Reflection of light phenomena, including sun dogs",
+            "Rocket": "Rocket launch or exhaust trail",
+            "Satelite": "Orbiting satellite of terrestrial origin (note: single-L spelling in original)",
+            "SpiderGoss": "Spider gossamer (threads carried aloft by spiders)",
+            "Star": "Star",
+            "Trawlers": "Ships at sea, fishing boats, shrimp boat lights, etc.",
+            "Unreliable": "Unreliable witness (see also Hoax)",
+            "Venus": "Venus"
+          }
+        },
+        "OBJS": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Number of UFO objects reported. Right-justified integer; prefixes '-'=about, '+'=at least; suffixes 'C'=hundred, 'K'=thousand. For processions (type 2P/3P) the maximum possible total is coded. For trace cases without UFO (type 0T) the number of trace marks is coded. Zero ('0') = no object involved. Letter codes: 'F'=few, 'G'=group, 'M'=many, 'N'=numerous, 'S'=several."
+        },
+        "DUR": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Duration of observation, normally in minutes (right-justified, '+' prefix = 'at least'). Seconds converted to tenths of minutes with preceding decimal point (e.g. '.1' = 3–8 seconds). Hours suffixed with 'H'; days with 'D'. Letter codes: 'B'=brief, 'VB'=very brief, '.F'=a few seconds, '.S'=several seconds, 'SH'=several hours."
+        },
+        "SIZE": {
+          "type": "number",
+          "description": "Estimated physical size of the UFO — stored as the base-2 logarithm of the largest dimension in feet (e.g. SIZE=5 means 32 ft / ~10 m; SIZE=7 means 128 ft / ~39 m; SIZE=10 means ~1,000 ft / ~300 m). Negative values possible (e.g. SIZE=-2 means ~0.3 ft / 8 cm). Blank if not reported. For trace cases (type 0T), the size of the trace mark.",
+          "conversionTable": {
+            "-2": "0.3 ft / 8 cm",
+            "-1": "0.5 ft / 15 cm",
+            "0": "1 ft / 0.3 m",
+            "1": "2 ft / 0.6 m",
+            "2": "4 ft / 1.2 m",
+            "3": "8 ft / 2.4 m",
+            "4": "16 ft / 5 m",
+            "5": "32 ft / 10 m",
+            "6": "64 ft / 20 m",
+            "7": "128 ft / 39 m",
+            "8": "256 ft / 78 m",
+            "9": "512 ft / 156 m",
+            "10": "~1,000 ft / 314 m (1/4 mile)",
+            "11": "~2,000 ft / 627 m (1/2 mile)",
+            "12": "~4,000 ft / 1,248 m (1 mile)",
+            "13": "~8,000 ft / 2,497 m (2 miles)"
+          }
+        },
+        "ANGLSIZ": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "Apparent (angular) size of the UFO as seen by the witness. Numeric codes preceded by decimal point: '.' = strict point source; '.0' = non-point source smaller than the moon/sun; '.1' = approximately equal to the sun or moon; '.2' = approximately twice the sun/moon; '.3' = three times, etc. Qualitative codes (Poher system) preceded by '(': '(A'=immense/huge, '(B'=size of a quarter at arm's length, '(C'=size of an orange at arm's length, '(D'=size of a melon/dinner plate, '(E'=~40 cm, '(F'=~1 metre, '(G'=~2 metres, '(H'=size of a typical commercial aircraft."
+        },
+        "DIST": {
+          "type": "number",
+          "description": "Distance from the UFO at closest approach — stored as base-2 logarithm of the shortest distance in feet (same scale as SIZE). e.g. DIST=8 means 256 ft / ~78 m. DIST=-1 means the witness actually touched the UFO (~0.5 ft). Blank if not reported. Field first added in 1998; most older records lack this data.",
+          "conversionTable": {
+            "-1": "0.5 ft / 15 cm (witness touched the UFO)",
+            "3": "8 ft / 2.4 m",
+            "5": "32 ft / 10 m",
+            "7": "128 ft / 39 m",
+            "8": "256 ft / 78 m",
+            "10": "~1,000 ft / 314 m (1/4 mile)",
+            "11": "~2,000 ft / 627 m (1/2 mile)"
+          }
+        },
+        "COLOR": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Principal colour of the UFO (largest object if multiple). Multi-coloured or multi-light objects coded 'Multi'. Reddish-orange coded as 'Orange'. Colour changes coded as 'Changed' (placed first in the field).",
+          "enum": [
+            "Aluminum",
+            "Amber",
+            "Beige",
+            "Black",
+            "Blue",
+            "BluGray",
+            "BluGreen",
+            "Bluish",
+            "Bright",
+            "Bronze",
+            "Brown",
+            "Changed",
+            "Chrome",
+            "Clear",
+            "Copper",
+            "Dark",
+            "Fire",
+            "Fluoresc",
+            "Glowing",
+            "Gold",
+            "Gray",
+            "Green",
+            "Luminous",
+            "Metallic",
+            "Multi",
+            "Orange",
+            "Pearl",
+            "Phosphor",
+            "Pink",
+            "Red",
+            "Rust",
+            "Shiny",
+            "Silver",
+            "Tan",
+            "Transpar",
+            "Violet",
+            "White",
+            "Yellow",
+            "Zinc"
+          ]
+        },
+        "SHAPE": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Principal shape of the UFO (largest object if multiple). Boomerang = 'V-Shape'. Shape changes = 'Polymorf'. Multi-sided polygons (hexagon, pentagon, octagon, etc.) all = 'Polygon'.",
+          "enum": [
+            "Aircraft",
+            "Arrow",
+            "Badge",
+            "Ball",
+            "Banana",
+            "Bat",
+            "Beam",
+            "Beehive",
+            "Blimp",
+            "Bottle",
+            "Bowl",
+            "BowTie",
+            "Box",
+            "Bulb",
+            "Bullet",
+            "Capsule",
+            "Cigar",
+            "Circle",
+            "Circular",
+            "Cloud",
+            "Cone",
+            "Copter",
+            "Crescent",
+            "Cross",
+            "Crown",
+            "Cube",
+            "Cylinder",
+            "Delta",
+            "Diamond",
+            "Dirigibl",
+            "Disc",
+            "DomeDisc",
+            "Dumbell",
+            "Ellipse",
+            "Elliptic",
+            "Elongate",
+            "FanBlade",
+            "Fish",
+            "Flare",
+            "Flash",
+            "Football",
+            "Fuselage",
+            "Globe",
+            "Hemisphr",
+            "L-Shape",
+            "Lampshad",
+            "Lens",
+            "Light",
+            "Lights",
+            "Linear",
+            "Lozenge",
+            "MantaRay",
+            "Missile",
+            "Object",
+            "Oblong",
+            "Odd",
+            "Orb",
+            "Oval",
+            "Ovoid",
+            "Pear",
+            "Polygon",
+            "Polymorf",
+            "Pyramid",
+            "Rectangl",
+            "Ring",
+            "Rocket",
+            "Round",
+            "Saturn",
+            "Schliere",
+            "Sparks",
+            "Sphere",
+            "Spindle",
+            "Square",
+            "Star",
+            "T-Shape",
+            "Teardrop",
+            "Top",
+            "Torpedo",
+            "Triangle",
+            "Tube",
+            "V-Shape",
+            "Walnut",
+            "Wedge",
+            "Wing",
+            "X-Shape",
+            "Y-Shape"
+          ]
+        },
+        "SOUND": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Principal sound (if any) reported in the presence of the UFO. 'NoSound' = explicitly confirmed silent. Field first added in 1998; most older records lack this data. ~65 values including: NoSound (54%), Noise (25%), Humming (5%), Buzzing, Whistle, Roar, Rumbling, Hissing, Copter, Jet, etc.",
+          "majorValues": [
+            "NoSound",
+            "Noise",
+            "Humming",
+            "Buzzing",
+            "Whistle",
+            "Roar",
+            "Rumbling",
+            "Hissing",
+            "Copter",
+            "Jet",
+            "Chirring",
+            "Droning",
+            "Swishing",
+            "Whirring",
+            "Whine"
+          ]
+        },
+        "LONGITUDE": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Longitude coordinate. Default (X3 blank) = English system: 360° circle, 0° meridian through Greenwich Observatory; West and North are positive, East and South are negative. Decimal point in column 5 = decimal degrees; minute-point (') in column 5 = degrees and minutes. French metric system (X3='M'): 400° circle, 0° meridian through Notre-Dame Cathedral, Paris."
+        },
+        "X3": {
+          "type": "string",
+          "maxLength": 1,
+          "description": "Coordinate system flag",
+          "enum": [
+            "",
+            "M",
+            "Q",
+            "="
+          ],
+          "enumDescriptions": {
+            "": "English system — 360° circle, 0° meridian = Greenwich, West/North positive",
+            "M": "French metric system — 400° circle, 0° meridian = Notre-Dame Paris, West/North positive",
+            "Q": "English system but coordinates seem questionable and have not been verified",
+            "=": "Coordinates are known to be in error"
+          }
+        },
+        "LATITUDE": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "Latitude coordinate (same system as LONGITUDE per X3 flag). Letters in first two columns indicate British National Grid System: two-letter square code (100 km × 100 km) identifies 'degrees' east and north from a base-point SW of Land's End, Cornwall; East longitude is positive in this system."
+        },
+        "NOTES": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Free-text narrative of the UFO incident including key words. Added 1998; only a small fraction of records have content. Also used to explain why coordinates were not entered: 'Various Sites' = multiple locations; 'More than One' = ambiguous place-name; 'No Such Place' = fictitious or erroneous place-name."
+        },
+        "Ufonaut": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Classification of type of UFO humanoid or alien entity reported (added in 2002 revision). Free-text/coded field for entity type descriptions."
+        },
+        "Height": {
+          "type": "number",
+          "description": "Height of the reported Ufonaut/entity in feet."
+        },
+        "Uniform": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Description of uniform or clothing worn by the reported Ufonaut/entity."
+        },
+        "LST": {
+          "type": "number",
+          "description": "Local Sidereal Time (LST) — computed from geographic coordinates and event date/time. Distinct from AST (Absolute Sidereal Time) which is calibrated to Puy de Dôme, France. Also stored with 'RA' prefix in the USER DEFINED FIELD."
+        },
+        "USER_DEFINED": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "User-definable field available for custom labels or search keys. Currently contains Local Sidereal Time (LST) prefixed with 'RA' to allow customised sidereal-time searches."
+        }
+      }
+    }
+  },
+  "crossCuttingEnumerations": {
+    "HynekClassification": {
+      "description": "Standard Hynek and derivative classification system, used across COBEPS, GEP, COB_2021, UFOSETI.",
+      "values": {
+        "NL": "Nocturnal Light — unstructured light seen at night (GEP notation)",
+        "LN": "Lumière Nocturne — nocturnal light (COBEPS French notation)",
+        "DD": "Daylight Disc — structured object seen in daylight",
+        "RR1": "Radar Return type 1 (COBEPS)",
+        "RR2": "Radar Return type 2",
+        "RR3": "Radar Return type 3",
+        "RR4": "Radar Return type 4",
+        "PS": "Photo/Sensor case",
+        "S": "Special/unclassified (GEP)",
+        "CE I": "Close Encounter I — observed within ~150 m, no physical effects",
+        "CE II": "Close Encounter II — physical effects on environment or witness",
+        "CE III": "Close Encounter III — occupants observed",
+        "CE IV": "Close Encounter IV — witness interaction or abduction",
+        "CE 4.2": "Close Encounter sub-type 4.2 (GEP extended classification)",
+        "FB1": "Vallée: Flying Bullet type 1 (UFOSETI Hynek/Vallée hybrid)",
+        "FB2": "Vallée: Flying Bullet type 2",
+        "FB5": "Vallée: Flying Bullet type 5",
+        "MA1": "Vallée: Manoeuvring type 1",
+        "MA2": "Vallée: Manoeuvring type 2",
+        "AN1": "Vallée: Anomaly type 1",
+        "AN2": "Vallée: Anomaly type 2"
+      }
+    },
+    "GEIPANClassification": {
+      "description": "French national GEIPAN/PAN classification. Used in COBEPS PAN (letter codes) and COB_2021 (capital letter codes).",
+      "values": {
+        "A": "Identified — explained with certainty (COB_2021)",
+        "B": "Probably identified — plausible explanation but not fully proven (COB_2021)",
+        "C": "Unresolved — insufficient data (COB_2021)",
+        "D": "Unidentified — thorough investigation; no explanation found (COB_2021)",
+        "a": "Identified (COBEPS PAN lowercase)",
+        "b": "Probably identified (COBEPS PAN lowercase)",
+        "c": "Insufficient data (COBEPS PAN lowercase)",
+        "d": "Unidentified (COBEPS PAN lowercase)",
+        "x": "Not yet classified",
+        "ec": "Under investigation (en cours)"
+      }
+    },
+    "DayNightCode": {
+      "description": "Time-of-day at moment of observation — used by COBEPS PAN, COB_2021.",
+      "values": {
+        "J": "Daytime (jour)",
+        "N": "Night-time (nuit)",
+        "C": "Twilight / crepuscular (crépuscule)",
+        "D": "Dawn"
+      }
+    },
+    "WeintsteinRadarCode": {
+      "description": "Radar detection flag used in Weinstein Pilot Catalog.",
+      "values": {
+        "AR": "Airborne radar detection",
+        "GR": "Ground radar detection",
+        "RO": "Radar-only case (no visual confirmation)",
+        "NR": "No radar detection",
+        "GR AR": "Both ground and airborne radar"
+      }
+    },
+    "ValleeFull": {
+      "description": "Complete Vallée classification system as used in UFOCAT 2023 (Confrontations, Ballantine, 1990). Four groups of five sub-types each, where the sub-type number (1–5) indicates increasing physical/experiential involvement.",
+      "groups": {
+        "AN — Anomalies (no UFO present)": {
+          "AN1": "Anomaly with no lasting physical effects — amorphous lights, unexplained explosions",
+          "AN2": "Anomaly with lasting physical effects — poltergeist phenomena, apports, flattened grass",
+          "AN3": "Anomaly with associated entities — ghosts, Bigfoot, dwarfs (no UFO seen)",
+          "AN4": "Witness experienced personal interaction with entities in the entities' own reality, including out-of-body experiences",
+          "AN5": "Anomalous injuries or deaths — spontaneous combustion, unexplained wounds, permanent healing"
+        },
+        "FB — Flybys (UFO observed in flight)": {
+          "FB1": "Simple flyby — UFO flies through the sky or remains stationary; no further effects",
+          "FB2": "Flyby accompanied by physical evidence",
+          "FB3": "Flyby with observation of occupants on board",
+          "FB4": "Flyby where the witness experienced a transformation of reality",
+          "FB5": "Flyby in which witnesses suffered permanent injuries"
+        },
+        "CE — Close Encounters": {
+          "CE1": "Close encounter with no physical effects",
+          "CE2": "Close encounter with physical effects — electromagnetic interference, physical traces",
+          "CE3": "Close encounter with associated entities seen in the vicinity of a UFO",
+          "CE4": "Close encounter in which witnesses experienced personal interaction with entities in the entities' own reality (contactee cases — distinct from Hynek's CE4=abduction)",
+          "CE5": "Close encounter resulting in permanent injuries or deaths"
+        },
+        "MA — Manoeuvres (UFO performs controlled manoeuvres)": {
+          "MA1": "Maneuvering object with a discontinuous trajectory",
+          "MA2": "Discontinuous trajectory giving rise to physical effects",
+          "MA3": "Maneuvering object with observation of occupants on board",
+          "MA4": "Manoeuvres accompanied by a sense of reality transformation for the witness",
+          "MA5": "Maneuvering UFO in which witnesses suffered permanent injuries"
+        }
+      }
+    },
+
+    "UFOCATHynekExtended": {
+      "description": "Extended Hynek classification as used in UFOCAT 2023 — includes the standard Hynek codes plus additions made over the years.",
+      "distant": {
+        "NL":  "Nocturnal Light — unstructured light seen at night",
+        "ND":  "Nocturnal Disc — structured nocturnal disc shape",
+        "NO":  "Nocturnal Object — structured nocturnal object with definite physical features, not disc-shaped (UFOCAT addition)",
+        "DD":  "Daylight Disc — disc-shaped object in daylight",
+        "DL":  "Daylight Light — unstructured light seen in daylight",
+        "DO":  "Daylight Object — daylight object not disc-shaped (UFOCAT addition)",
+        "RV":  "Radar-Visual — simultaneous radar and visual confirmation",
+        "RR":  "Radar only — radar return without visual confirmation"
+      },
+      "closeEncounters": {
+        "CE1": "Close Encounter of the First Kind — observed within ~150 m, no physical effects",
+        "CE2": "Close Encounter of the Second Kind — physical effects on environment, vehicle, or witness",
+        "CE3": "Close Encounter of the Third Kind — entity/occupant observed (includes contactees in HYNEK field)",
+        "CE4": "Close Encounter of the Fourth Kind — abduction report (UFOCAT addition to Hynek)"
+      },
+      "miscellaneous": {
+        "AM":  "Animal Mutilation — non-cattle animal mutilation reports",
+        "BH":  "Black Helicopter — mystery or 'black' helicopter sightings",
+        "CM":  "Cattle Mutilation — cattle mutilation reports",
+        "CR":  "Crash Retrieval — accounts of crashed discs and their retrieval",
+        "MIB": "Men In Black — military imposters, mystery investigators, or other interference with report investigation",
+        "TC":  "Trace only — physical trace (e.g. crop circle) without an accompanying UFO sighting"
+      }
+    },
+
+    "UFOCATTypeSystem": {
+      "description": "UFOCAT TYPE field coding — first character is the strangeness type digit (0–9), followed by letter sub-type codes. The full sub-type key runs to ~60 codes; major ones are documented here.",
+      "typeDigits": {
+        "0": "Non-UFO event (nuclear test, power failure, crop circle discovery, death of UFO researcher, etc.)",
+        "1": "Stationary UFO (motion ≤ 15°/hour, the apparent speed of stars)",
+        "2": "Continuously moving UFO (speed > 15°/hour)",
+        "3": "Non-continuous trajectory — single discontinuity (one sharp turn or hover)",
+        "4": "Non-continuous trajectory — multiple discontinuities (complex flight)",
+        "5": "UFO entered witness frame of reference — encounter without landing (includes all photo, radar, EM cases)",
+        "6": "UFO landed in witness frame of reference (min. separation ≤ major object dimension; may include traces)",
+        "7": "Outside occupants reported",
+        "8": "Intelligent communication (telepathy qualifies; mere gestures do not)",
+        "9": "Lasting physical/functional effects on witness or animals after UFO departed (abduction, missing time, cattle mutilation)"
+      },
+      "majorSubTypeCodes": {
+        "A": "Acrobatics / astronomical anomaly (type-dependent)",
+        "B": "Balloon-like behaviour / buzzing",
+        "C": "Chasing-pacing / cloud-cigar shape (type-dependent)",
+        "D": "Disc shape",
+        "E": "Electromagnetic effect on vehicles or instruments",
+        "F": "Fireball / falling-leaf manoeuvre (type-dependent)",
+        "G": "Gravity effect or anomalous mass-displacement field",
+        "H": "Hovered / sketch provided (type-dependent)",
+        "I": "Instrumented observation",
+        "L": "Landed remotely / unintelligible language (type 7) / moon (type 1)",
+        "M": "Animals present (must precede S) / movies (must follow S) / monster with UFO (type 7)",
+        "N": "Noise or sound",
+        "O": "Inside occupant (must be in 2nd column) / ring or circle (must not be in 2nd column)",
+        "P": "Physiological effects on witness (transient)",
+        "Q": "Quantitative analysis performed",
+        "R": "Radar observation without visual (5R) / multiple radar (5RR)",
+        "S": "Still photograph taken; combined codes: SD=disc photo, SL=luminous/transparent, SM=movie, SS=structured, SZ=point in motion",
+        "T": "Physical traces correlated with object; combined codes: TF=altered field, TJ=remnant, TT=ground marks, TU=chemical change, TX=radioactivity",
+        "V": "Radar/visual confirmation",
+        "W": "Independent witnesses",
+        "X": "Exploded / explosion (type-dependent)",
+        "Y": "Angel hair residue / psychic effects or hypnotic testimony (type-dependent)",
+        "Z": "Crescent shape (Z alone) / zigzag manoeuvre (ZZ) / miscellaneous (0Z)",
+        "^": "Vertical ascent",
+        "9A": "Abduction or disappearance",
+        "9B": "Teleportation or abduction and return",
+        "9L": "Lapse of time / missing time",
+        "9M": "Animal mutilations",
+        "8K": "Men in Black incident"
+      }
+    },
+
+    "UFOSETIAnomalyReliabilityCode": {
+      "description": "UFOSETI two-axis rating: Anomaly level (A0–A3) × Source reliability (R0–R4).",
+      "anomalyAxis": {
+        "A0": "Not anomalous",
+        "A1": "Probably not anomalous",
+        "A2": "Probably anomalous",
+        "A3": "Anomalous"
+      },
+      "reliabilityAxis": {
+        "R0": "Hoax / mistake",
+        "R1": "Rumor / media publication",
+        "R2": "Reliable source / primary source",
+        "R3": "Indirect testimony",
+        "R4": "Indirect evidence"
+      }
+    },
+    "UFOCATHynekExtended": {
+      "description": "Full Hynek classification set as used in UFOCAT 2023, including post-Hynek extensions. Superset of the basic CE/NL/DD codes found in other datasets.",
+      "values": {
+        "NL": "Nocturnal Light",
+        "ND": "Nocturnal Disc",
+        "NO": "Nocturnal Object (structured, not disc-shaped)",
+        "DD": "Daylight Disc",
+        "DL": "Daylight Light",
+        "DO": "Daylight Object (structured, not disc-shaped)",
+        "RV": "Radar-Visual",
+        "RR": "Radar-only",
+        "CE1": "Close Encounter I — within ~150 m, no physical effects",
+        "CE2": "Close Encounter II — with physical effects",
+        "CE3": "Close Encounter III — entities observed",
+        "CE4": "Close Encounter IV — abduction (UFOCAT/Hynek); contactee (Vallée)",
+        "AM": "Animal mutilation (non-cattle)",
+        "BH": "Black/mystery helicopter",
+        "CM": "Cattle mutilation",
+        "CR": "Crashed disc retrieval",
+        "MIB": "Men in Black incident",
+        "TC": "Trace without UFO (e.g. crop circles)"
+      }
+    },
+    "SVP_CredibilityRating": {
+      "description": "Vallée SVP 3-digit credibility rating used in UFOCAT. Read as three independent digits: S (source reliability 0–4), V (site visit 0–4), P (possible explanations 0–4). Higher numbers = greater credibility/strangeness. Example: '442' = proven firsthand reliable source, skilled analyst site visit, natural explanation requires gross alteration of one parameter.",
+      "S": {
+        "0": "Unknown/unreliable",
+        "1": "Known, uncalibrated",
+        "2": "Reliable, secondhand",
+        "3": "Reliable, firsthand",
+        "4": "Firsthand interview, proven reliability both sides"
+      },
+      "V": {
+        "0": "No site visit",
+        "1": "Casual visitor",
+        "2": "Persons familiar with phenomena",
+        "3": "Reliable investigator",
+        "4": "Skilled analyst"
+      },
+      "P": {
+        "0": "Consistent with natural causes",
+        "1": "Slight modification needed",
+        "2": "Gross alteration of one parameter needed",
+        "3": "Gross alteration of several parameters needed",
+        "4": "No natural explanation possible"
+      }
+    }
+  },
+  "folderInventory": {
+    "$comment": "Maps each Drive subfolder to its dataset entry and data status.",
+    "(US) NUFORC": {
+      "dataset": "NUFORC",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV"
+    },
+    "(US) BLUE BOOK": {
+      "dataset": "BLUE_BOOK",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV + XLSX"
+    },
+    "(UK) NATIONAL ARCHIVES CATALOGUE": {
+      "dataset": "UK_NATIONAL_ARCHIVES",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV"
+    },
+    "(BE) COBEPS": {
+      "dataset": "COBEPS_NOTIFICATIONS_PAN + COBEPS_COB_2021",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV + TSV"
+    },
+    "(DE) GEP": {
+      "dataset": "GEP",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV"
+    },
+    "(US) UPDB": {
+      "dataset": "UPDB_NICAP",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV"
+    },
+    "(FR) OVNIBASE": {
+      "dataset": "OVNIBASE",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV (tab)"
+    },
+    "(RU) UFOSETI": {
+      "dataset": "UFOSETI",
+      "hasStructuredData": true,
+      "primaryFormat": "CSV + HDF5"
+    },
+    "(INT) UAPCHECK": {
+      "dataset": "UAPCHECK",
+      "hasStructuredData": true,
+      "primaryFormat": "SQL (API registry only)"
+    },
+    "(US) UAP SIGHTINGS": {
+      "dataset": "UAP_SIGHTINGS_GITHUB",
+      "hasStructuredData": true,
+      "primaryFormat": "JSON"
+    },
+    "(IT) CISU – CISUCAT": {
+      "dataset": "CISU_CISUCAT",
+      "hasStructuredData": true,
+      "primaryFormat": "XLS (needs parsing)"
+    },
+    "(IT+FR) CUFOC 1977": {
+      "dataset": "CUFOC_1977_ITALY_FRANCE",
+      "hasStructuredData": true,
+      "primaryFormat": "XLSX + PDFs"
+    },
+    "(FR) WEINSTEIN PILOT CATALOG": {
+      "dataset": "WEINSTEIN_PILOT_CATALOG",
+      "hasStructuredData": true,
+      "primaryFormat": "XLSX"
+    },
+    "(CL) PETROWITSCH": {
+      "dataset": "PETROWITSCH_LATAM",
+      "hasStructuredData": true,
+      "primaryFormat": "XLSX (2 files)"
+    },
+    "(CZ) PROJECT ZARE": {
+      "dataset": "PROJECT_ZARE",
+      "hasStructuredData": false,
+      "primaryFormat": "RAR archive (not extracted)"
+    },
+    "(BR) GEUCRS": {
+      "dataset": "GEUCRS",
+      "hasStructuredData": false,
+      "primaryFormat": "Images only (no raw data)"
+    },
+    "(ES) CUCO": {
+      "dataset": "CUCO",
+      "hasStructuredData": true,
+      "primaryFormat": "XLS (sample only)"
+    },
+    "__OLD__": {
+      "dataset": "N/A",
+      "hasStructuredData": false,
+      "primaryFormat": "Archive folder — not analysed"
+    },
+    "UFOCAT": {
+      "dataset": "UFOCAT",
+      "hasStructuredData": true,
+      "primaryFormat": "Microsoft Access 97 (.mdb) — 49-field relational database",
+      "note": "Not present in the Google Drive folder as a raw data file; schema derived from the UFOCAT 2023 User's Guide (PDF). Database available for purchase from Sun River Research Institute, Bow NH."
+    }
+  }
+}

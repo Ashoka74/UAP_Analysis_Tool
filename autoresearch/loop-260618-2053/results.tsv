@@ -1,0 +1,14 @@
+# metric_direction: higher_is_better
+iteration	timestamp	commit	metric	delta	guard	guard-metric	status	description
+0	20:59:01	-	0.3158	0.0	-	-	baseline	τ=0.55 sim-only (no date/loc/field gates)
+1	20:59:56	ccf8b9c	0.6737	+0.3579	-	-	keep	lower τ 0.55→0.30 (recover low-sim positives)
+2	21:00:16	56781a9	0.6809	+0.0072	-	-	keep	enable date gate (t_max=2d) on τ=0.30
+3	21:00:28	-	0.6667	-0.0142	-	-	discard	enable location gate (same norm-loc / shared state)
+4	21:00:53	79cb15d	0.6818	+0.0009	-	-	keep	enable field-agreement gate (≥0.5 of craft/witness/country/state/year)
+5	21:01:09	1614f1d	0.8039	+0.1221	-	-	keep	lower τ 0.30→0.10 (gates now protect precision)
+6	21:01:26	-	0.7586	-0.0453	-	-	discard	tighten field_min 0.5→0.7
+7	21:01:47	5f22098	0.8119	+0.0080	-	-	keep	tighten date window t_max 2→0 (require overlapping date intervals)
+8	21:02:03	-	0.7835	-0.0284	-	-	discard	field_min 0.5→0.6
+9	21:03:04	-	0.8039	-0.0080	-	-	discard	add high-sim bypass (sim≥0.6 accept regardless of gates)
+10	21:20:08	-	0.7640	-0.0479	-	-	discard	switch confirmer to MiniLM embedding cosine (embed_tau=0.78) + date/field gates
+11	21:20:49	-	0.7961	-0.0158	-	-	discard	embedding confirmer at low floor embed_tau=0.45 (gates dominate)

@@ -1,0 +1,54 @@
+# FastAPI backend image (api/main.py).
+#
+#   docker build -f Dockerfile.api -t ufosint-api .
+#   docker run -p 8000:8000 \
+#     -v ./parsed_files_distance_embeds.h5:/app/parsed_files_distance_embeds.h5:ro \
+#     -v ./final_ufoseti_dataset.h5:/app/final_ufoseti_dataset.h5:ro \
+#     ufosint-api
+#
+# The .h5 datasets are mounted at runtime (1.8 GB — never baked into the image).
+# Torch is installed CPU-only to keep the image a few GB smaller; the analysis
+# code falls back to CPU automatically when no CUDA device is present.
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # sentence-transformers / HF model downloads land here — mount a volume to
+    # persist them across container restarts (see docker-compose.yml).
+    HF_HOME=/cache/huggingface \
+    UAP_ANALYSIS_MODE=production
+
+# poppler-utils: pdf2image (preprocessing pipeline)
+# libgomp1:      OpenMP runtime needed by xgboost/scikit-learn wheels
+# curl:          container healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        poppler-utils libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# CPU-only torch first so requirements.txt's bare `torch` is already satisfied
+# and pip does not pull the multi-GB CUDA build.
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt uvicorn
+
+# The API server deps live in pyproject.toml, not requirements.txt (which is
+# the HF-Space/Streamlit list) — install them explicitly. Separate layer so
+# the multi-GB requirements layer above stays cached when this changes.
+RUN pip install "fastapi>=0.115" "python-multipart>=0.0.18"
+
+# Code + small data files (CSVs, .kgl map configs). Heavy artifacts are
+# excluded via .dockerignore and mounted at runtime instead.
+COPY . .
+
+RUN mkdir -p /cache/huggingface
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fs http://localhost:8000/api/dashboard/summary || exit 1
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

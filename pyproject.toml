@@ -1,0 +1,71 @@
+[project]
+name = "uap-data-analysis-tool"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "cohere>=5.17.0",
+    "datamapplot>=0.6.3",
+    "fast-hdbscan>=0.2.2",
+    "fastapi>=0.135.3",
+    "fastdtw>=0.3.4",
+    "google-generativeai>=0.8.5",
+    "h5py>=3.14.0",
+    "ipython>=9.4.0",
+    "keplergl==0.3.2",
+    "matplotlib>=3.10.5",
+    "numpy>=2.2.6",
+    "openai>=1.99.9",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.1",
+    "pillow>=11.3.0",
+    "plotly>=6.3.0",
+    "protobuf>=5.29.5",
+    "pymupdf>=1.27.2.3",
+    "python-dateutil>=2.9.0.post0",
+    "python-levenshtein>=0.27.1",
+    "python-multipart>=0.0.22",
+    "requests>=2.32.4",
+    "scikit-learn>=1.7.1",
+    "scipy>=1.16.1",
+    "seaborn>=0.13.2",
+    "sentence-transformers>=5.1.0",
+    "transformers>=5.8.0.dev0",
+    "squarify>=0.4.4",
+    "st-paywall>=1.0.2",
+    "statsmodels>=0.14.5",
+    "stqdm>=0.0.5",
+    "streamlit>=1.48.1",
+    "streamlit-extras>=0.7.6",
+    "streamlit-keplergl>=0.3.0",
+    "tables>=3.10.2",
+    "torch>=2.8.0",
+    "tqdm>=4.67.1",
+    "umap-learn>=0.5.9.post2",
+    "uvicorn>=0.43.0",
+    "xgboost>=3.0.4",
+    "torchvision>=0.23.0",
+    "accelerate>=1.13.0",
+    "setuptools>=80.9.0",
+    "cuvs-cu12>=26.2.0",
+    "d>=0.2.2",
+    "pyyaml>=6.0.2",
+    "google-genai>=2.6.0",
+    "pypdf>=6.12.0",
+    "mistralai<2",
+    "reportlab>=4.5.1",
+    "pdf2image>=1.17.0",
+    "pdfplumber>=0.11.0",
+    "runpod-flash>=1.16.0",
+    "psycopg[binary]>=3.3.4",
+    "pgvector>=0.4.2",
+]
+
+[tool.uv.sources]
+transformers = { git = "https://github.com/huggingface/transformers" }
+
+[tool.uv]
+override-dependencies = [
+    "transformers>=5.8.0.dev0",
+]

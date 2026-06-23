@@ -1,0 +1,239 @@
+{
+  "version": "v1",
+  "config": {
+    "visState": {
+      "filters": [],
+      "layers": [
+        {
+          "id": "cl6utnk",
+          "type": "point",
+          "config": {
+            "dataId": "uap_sightings",
+            "label": "Sightings",
+            "color": [
+              243,
+              251,
+              237
+            ],
+            "highlightColor": [
+              252,
+              242,
+              26,
+              255
+            ],
+            "columns": {
+              "lat": "latitude",
+              "lng": "longitude",
+              "altitude": null
+            },
+            "isVisible": true,
+            "visConfig": {
+              "radius": 9.7,
+              "fixedRadius": false,
+              "opacity": 0.8,
+              "outline": false,
+              "thickness": 2,
+              "strokeColor": null,
+              "colorRange": {
+                "name": "Global Warming",
+                "type": "sequential",
+                "category": "Uber",
+                "colors": [
+                  "#5A1846",
+                  "#900C3F",
+                  "#C70039",
+                  "#E3611C",
+                  "#F1920E",
+                  "#FFC300"
+                ]
+              },
+              "strokeColorRange": {
+                "name": "Global Warming",
+                "type": "sequential",
+                "category": "Uber",
+                "colors": [
+                  "#5A1846",
+                  "#900C3F",
+                  "#C70039",
+                  "#E3611C",
+                  "#F1920E",
+                  "#FFC300"
+                ]
+              },
+              "radiusRange": [
+                0,
+                50
+              ],
+              "filled": true
+            },
+            "hidden": false,
+            "textLabel": [
+              {
+                "field": null,
+                "color": [
+                  255,
+                  255,
+                  255
+                ],
+                "size": 18,
+                "offset": [
+                  0,
+                  0
+                ],
+                "anchor": "start",
+                "alignment": "center"
+              }
+            ]
+          },
+          "visualChannels": {
+            "colorField": null,
+            "colorScale": "quantile",
+            "strokeColorField": null,
+            "strokeColorScale": "quantile",
+            "sizeField": null,
+            "sizeScale": "linear"
+          }
+        },
+        {
+          "id": "bqpymx4",
+          "type": "heatmap",
+          "config": {
+            "dataId": "uap_sightings",
+            "label": "HeatMap",
+            "color": [
+              130,
+              154,
+              227
+            ],
+            "highlightColor": [
+              252,
+              242,
+              26,
+              255
+            ],
+            "columns": {
+              "lat": "latitude",
+              "lng": "longitude"
+            },
+            "isVisible": true,
+            "visConfig": {
+              "opacity": 0.8,
+              "colorRange": {
+                "name": "ColorBrewer BuPu-6",
+                "type": "sequential",
+                "category": "ColorBrewer",
+                "colors": [
+                  "#810f7c",
+                  "#8856a7",
+                  "#8c96c6",
+                  "#9ebcda",
+                  "#bfd3e6",
+                  "#edf8fb"
+                ],
+                "reversed": true
+              },
+              "radius": 42.2
+            },
+            "hidden": false,
+            "textLabel": [
+              {
+                "field": null,
+                "color": [
+                  255,
+                  255,
+                  255
+                ],
+                "size": 18,
+                "offset": [
+                  0,
+                  0
+                ],
+                "anchor": "start",
+                "alignment": "center"
+              }
+            ]
+          },
+          "visualChannels": {
+            "weightField": null,
+            "weightScale": "linear"
+          }
+        }
+      ],
+      "interactionConfig": {
+        "tooltip": {
+          "fieldsToShow": {
+            "040l4v2ys": [
+              {
+                "name": "0",
+                "format": null
+              },
+              {
+                "name": "labels",
+                "format": null
+              },
+              {
+                "name": "text",
+                "format": null
+              },
+              {
+                "name": "city",
+                "format": null
+              },
+              {
+                "name": "country",
+                "format": null
+              }
+            ]
+          },
+          "compareMode": false,
+          "compareType": "absolute",
+          "enabled": true
+        },
+        "brush": {
+          "size": 0.5,
+          "enabled": false
+        },
+        "geocoder": {
+          "enabled": false
+        },
+        "coordinate": {
+          "enabled": false
+        }
+      },
+      "layerBlending": "normal",
+      "splitMaps": [],
+      "animationConfig": {
+        "currentTime": null,
+        "speed": 1
+      }
+    },
+    "mapState": {
+      "bearing": 0,
+      "dragRotate": false,
+      "latitude": 42.965001236045275,
+      "longitude": -72.7338233315822,
+      "pitch": 0,
+      "zoom": 2.1144352988031674,
+      "isSplit": false
+    },
+    "mapStyle": {
+      "styleType": "dark-matter",
+      "topLayerGroups": {},
+      "visibleLayerGroups": {
+        "label": true,
+        "road": true,
+        "border": false,
+        "building": true,
+        "water": true,
+        "land": true,
+        "3d building": false
+      },
+      "threeDBuildingColor": [
+        9.665468314072013,
+        17.18305478057247,
+        31.1442867897876
+      ],
+      "mapStyles": {}
+    }
+  }
+}

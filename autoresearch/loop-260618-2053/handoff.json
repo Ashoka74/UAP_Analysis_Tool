@@ -1,0 +1,27 @@
+{
+  "version": "2.1.0",
+  "source": "loop",
+  "timestamp": "2026-06-18",
+  "status": "COMPLETE",
+  "results_tsv": "autoresearch/loop-260618-2053/results.tsv",
+  "findings": [
+    "F1 0.3158 -> 0.8119 (+157%) over 9 iterations (5 kept, 4 discarded).",
+    "Winning rule is 'full-row': tau=0.10 (text nearly off) + date-overlap gate + field-agreement>=0.5; location gate OFF.",
+    "Biggest gains came from LOWERING the text-similarity floor, not raising it (iter1 +0.358, iter5 +0.122): true dups are low-sim; structured agreement carries the signal.",
+    "Strict location matching HURT (iter3 -0.014): location drift loses true-dup recall without removing FPs.",
+    "Residual 15 FP are same-day field-agreeing flap pairs that programmatic gates cannot separate -> the LLM/semantic Tier-3 confirmer's job, as designed.",
+    "Gold set is small (45 pos / 51 neg, 96 pairs); numbers are directional. Grow labels over the UNKNOWN band to harden the operating point.",
+    "Embedding confirmer (MiniLM) did NOT beat the structured method: iter10 (embed_tau0.78)=0.764, iter11 (0.45)=0.796 < 0.8119. Residual FPs are flap pairs that are semantically similar (neg embed_sim up to 0.95), so no similarity metric separates them \u2014 only the LLM Tier-3 does.",
+    "APPLIED to full Excel: 35,778 candidate pairs \u2192 2,613 programmatic flags (flap over-merge) \u2192 318 high-confidence (embed\u22650.85+gates) \u2192 303 LLM-confirmed \u2192 232 duplicate clusters, 274 redundant rows (15.3% of dataset). Output: PURSUE_1_2_3_dedup_flagged.xlsx (nothing deleted; canonical row flagged per cluster)."
+  ],
+  "config": {
+    "goal": "Flag similar events (dedupe) \u2014 maximize agreement of programmatic full-row decision with LLM same-event labels",
+    "scope": [
+      "make_timeline.py",
+      "geo_dedup.py"
+    ],
+    "metric": "F1 (programmatic predict_same_event vs LLM gold)",
+    "direction": "higher_is_better",
+    "verify": "uv run python geo_dedup.py verify"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "subcommand": "core",
+  "iterations": 9,
+  "kept": 5,
+  "reverted": 4,
+  "revert_rate_pct": 44.4,
+  "start_metric": 0.3158,
+  "final_metric": 0.8119,
+  "improvement_pct": 157.1,
+  "longest_keep_streak": 2,
+  "plateau_since_iter": 7,
+  "plateau_len": 2,
+  "biggest_win": {
+    "iter": 1,
+    "delta": 0.3579,
+    "desc": "lower \u03c4 0.55\u21920.30 (recover low-sim positives)"
+  },
+  "biggest_loss": {
+    "iter": 6,
+    "delta": -0.0453,
+    "desc": "tighten field_min 0.5\u21920.7"
+  },
+  "kept_changes": [
+    "lower \u03c4 0.55\u21920.30 (recover low-sim positives)",
+    "enable date gate (t_max=2d) on \u03c4=0.30",
+    "enable field-agreement gate (\u22650.5 of craft/witness/country/state/year)",
+    "lower \u03c4 0.30\u21920.10 (gates now protect precision)",
+    "tighten date window t_max 2\u21920 (require overlapping date intervals)"
+  ],
+  "failed_changes": [
+    "enable location gate (same norm-loc / shared state)",
+    "tighten field_min 0.5\u21920.7",
+    "field_min 0.5\u21920.6",
+    "add high-sim bypass (sim\u22650.6 accept regardless of gates)"
+  ],
+  "recommendation": "STOP threshold loop (converged, plateau \u22653 iters). Change strategy: swap lexical sim\u2192embedding cosine and grow gold labels over the UNKNOWN band to attack the residual same-day flap FPs (LLM/semantic tier)."
+}

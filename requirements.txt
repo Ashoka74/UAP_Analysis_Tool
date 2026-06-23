@@ -1,0 +1,60 @@
+fast_hdbscan
+h5py
+tables
+openpyxl
+google-generativeai
+cohere
+datamapplot
+fastdtw
+ipython
+keplergl==0.3.2
+matplotlib
+numpy
+openai
+pandas
+Pillow
+pymupdf
+plotly
+protobuf
+python_dateutil
+python_Levenshtein
+Requests
+scikit_learn
+scipy
+seaborn
+sentence_transformers
+squarify
+statsmodels
+st-paywall
+streamlit
+streamlit_extras
+streamlit_kepler_component
+streamlit_keplergl
+torch
+umap_learn
+xgboost
+tf-keras
+
+# Imported by the app but previously missing from requirements (present in the
+# uv env / uv.lock). stqdm, tqdm and psutil are hard top-level imports
+# (uap_analyzer.py, the pages, and utils/memory_manager.py via utils/__init__),
+# so the pages fail to import without them. psycopg (Neon semantic search) and
+# transformers (pdf_ocr LightOnOCR) are lazy feature deps.
+# Note: GPU acceleration (cupy/cuml/cuvs/rmm) and tiktoken are optional and
+# guarded by try/except, so they are intentionally NOT pinned here.
+stqdm
+tqdm
+psutil
+transformers
+psycopg[binary]
+
+# Document Preprocessing pipeline (pipeline/) — vendored scripts' deps.
+# (openai, Pillow, pymupdf, Requests are already listed above.)
+# Note: pdf2image also needs the system `poppler` binary (poppler-utils).
+pyyaml
+google-genai
+pypdf
+mistralai
+reportlab
+pdf2image
+pdfplumber
