@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, AlertTriangle, CheckCircle2, Layers, BarChart3, Grid3x3, Settings2, Network } from 'lucide-react';
+import { Play, AlertTriangle, CheckCircle2, Layers, BarChart3, Grid3x3, Settings2, Network, Sparkles } from 'lucide-react';
 import { api } from '../../api/client';
 import { useStore } from '../../store/useStore';
 import { Panel } from '../common/Panel';
@@ -9,29 +9,58 @@ import { CorrelationHeatmap } from './CorrelationHeatmap';
 import { XGBoostResults } from './XGBoostResults';
 import { DistributionChart } from './DistributionChart';
 import { CramersVExplorer } from './CramersVExplorer';
-import type { AnalysisResponse, XGBoostResult } from '../../types';
+import { EvidenceGuide } from './EvidenceGuide';
+import type { AnalysisResponse, XGBoostResult, XgboostPcaResponse, XgboostImputeResponse } from '../../types';
 
 type TabId = 'clusters' | 'correlation' | 'xgboost' | 'distribution' | 'association';
 
 export function AnalysisPage() {
-  const { data, dataLoaded, analysisResults, setAnalysisResults, analysisRunning, setAnalysisRunning, setPage } = useStore();
+  const {
+    data, dataLoaded, analysisResults, setAnalysisResults, analysisRunning, setAnalysisRunning, setPage,
+    setCramersSelected, setCramersAutoRun,
+    openaiKey, setOpenaiKey, geminiKey, setGeminiKey, deepseekKey, setDeepseekKey,
+  } = useStore();
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('clusters');
-  // XGBoost feature importance handed over from the Cramér's V explorer.
+  // XGBoost feature importance handed over from the Cramér's V explorer. The
+  // optional `assocPca` carries the 2nd-pass (PCA latent-index) payload alongside.
   const [assocXgboost, setAssocXgboost] = useState<Record<string, XGBoostResult> | null>(null);
+  const [assocPca, setAssocPca] = useState<XgboostPcaResponse | null>(null);
+  const [assocImpute, setAssocImpute] = useState<XgboostImputeResponse | null>(null);
 
-  const handleAssocXgboost = (r: Record<string, XGBoostResult>) => {
+  const handleAssocXgboost = (
+    r: Record<string, XGBoostResult>,
+    extras?: { pca?: XgboostPcaResponse; impute?: XgboostImputeResponse },
+  ) => {
     setAssocXgboost(r);
+    setAssocPca(extras?.pca ?? null);
+    setAssocImpute(extras?.impute ?? null);
     setActiveTab('xgboost');
+  };
+
+  // Reverse hand-off: push the analyzed columns from the Feature Importance tab
+  // into the Cramér's V explorer and auto-compute associations there.
+  const handleXgbToAssoc = (cols: string[]) => {
+    setCramersSelected(cols);
+    setCramersAutoRun(true);
+    setActiveTab('association');
   };
 
   // Cluster pipeline tuning (mirrors analyzing.py controls)
   const [showParams, setShowParams] = useState(false);
   const [enableTfidf, setEnableTfidf] = useState(false);
+  const [enableLlm, setEnableLlm] = useState(false);
+  const [llmModel, setLlmModel] = useState('gpt-4o-mini');
   const [minClusterSize, setMinClusterSize] = useState(15);
   const [nNeighbors, setNNeighbors] = useState(15);
   const [minDist, setMinDist] = useState(0.1);
+
+  // AI cluster naming uses an LLM; pick the provider/key from the model id and
+  // reuse the matching key already held in the store (set on Parsing / AI Query).
+  const llmProvider = llmModel.includes('gemini') ? 'google' : llmModel.startsWith('deepseek') ? 'deepseek' : 'openai';
+  const llmKey = llmProvider === 'google' ? geminiKey : llmProvider === 'deepseek' ? deepseekKey : openaiKey;
+  const setLlmKey = llmProvider === 'google' ? setGeminiKey : llmProvider === 'deepseek' ? setDeepseekKey : setOpenaiKey;
 
   const columns = data?.columns ?? [];
   const results: AnalysisResponse | null = analysisResults;
@@ -52,6 +81,9 @@ export function AnalysisPage() {
         min_cluster_size: minClusterSize,
         n_neighbors: nNeighbors,
         min_dist: minDist,
+        ...(enableLlm
+          ? { enable_llm: true, llm_provider: llmProvider, llm_model: llmModel, llm_api_key: llmKey }
+          : {}),
       });
       setAnalysisResults(res);
     } catch (e: unknown) {
@@ -134,7 +166,8 @@ export function AnalysisPage() {
         )}
 
         {showParams && (
-          <div className="mt-3 grid grid-cols-1 gap-4 rounded-md border border-border/50 bg-raised/50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 space-y-3 rounded-md border border-border/50 bg-raised/50 p-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label className="flex items-center gap-2 text-xs text-text-secondary">
               <input
                 type="checkbox"
@@ -143,6 +176,17 @@ export function AnalysisPage() {
                 className="accent-accent"
               />
               TF-IDF cluster naming + merging
+            </label>
+            <label className="flex items-center gap-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                checked={enableLlm}
+                onChange={(e) => setEnableLlm(e.target.checked)}
+                className="accent-accent"
+              />
+              <span className="inline-flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-purple" /> AI cluster naming (LLM)
+              </span>
             </label>
             <div>
               <label className="mb-1 block text-[11px] text-text-muted">
@@ -174,6 +218,36 @@ export function AnalysisPage() {
                 className="w-full accent-accent"
               />
             </div>
+          </div>
+
+          {enableLlm && (
+            <div className="grid grid-cols-1 gap-3 border-t border-border/40 pt-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] text-text-muted">LLM model (names each cluster)</label>
+                <select
+                  value={llmModel}
+                  onChange={(e) => setLlmModel(e.target.value)}
+                  className="w-full rounded border border-border bg-deep px-2.5 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+                >
+                  {['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o', 'models/gemini-3.1-pro-preview'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-text-muted">
+                  {llmProvider === 'google' ? 'Gemini' : llmProvider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} API key
+                </label>
+                <input
+                  type="password"
+                  value={llmKey}
+                  onChange={(e) => setLlmKey(e.target.value)}
+                  placeholder="Reused from Parsing / AI Query if already set…"
+                  className="w-full rounded border border-border bg-deep px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
           </div>
         )}
       </Panel>
@@ -223,27 +297,46 @@ export function AnalysisPage() {
       {/* Association explorer — independent of the cluster pipeline. Its XGBoost
           run is handed to the Feature Importance tab via handleAssocXgboost. */}
       {activeTab === 'association' && (
-        <CramersVExplorer source="dataset" onXgboost={handleAssocXgboost} />
+        <div className="space-y-4">
+          <EvidenceGuide />
+          <CramersVExplorer source="dataset" onXgboost={handleAssocXgboost} />
+        </div>
       )}
 
       {/* Feature importance — independent of the cluster pipeline: it shows the
           explorer-driven results when present, otherwise the pipeline's. */}
       {activeTab === 'xgboost' && (() => {
-        const xgb =
-          assocXgboost && Object.keys(assocXgboost).length > 0
-            ? assocXgboost
-            : results?.xgboost ?? null;
+        const usingAssoc = !!assocXgboost && Object.keys(assocXgboost).length > 0;
+        const xgb = usingAssoc ? assocXgboost : results?.xgboost ?? null;
         if (xgb && Object.keys(xgb).length > 0) {
           return (
             <div className="space-y-3">
-              {assocXgboost && Object.keys(assocXgboost).length > 0 && (
-                <div className="flex items-center gap-2 rounded-md border border-purple/30 bg-purple/10 px-4 py-2.5 text-xs text-text-secondary">
-                  <Network className="h-4 w-4 text-purple" />
-                  Computed directly from your Cramér's V column selection — each column predicted
-                  from the others.
-                </div>
-              )}
-              <XGBoostResults results={xgb} />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {usingAssoc ? (
+                  <div className="flex items-center gap-2 rounded-md border border-purple/30 bg-purple/10 px-4 py-2.5 text-xs text-text-secondary">
+                    <Network className="h-4 w-4 text-purple" />
+                    Computed directly from your Cramér's V column selection — each column predicted
+                    from the others{assocPca ? ', with an optional PCA 2nd pass collapsing redundancy clusters' : ''}.
+                  </div>
+                ) : (
+                  <span className="text-xs text-text-muted">
+                    Feature importance for {Object.keys(xgb).length} column(s).
+                  </span>
+                )}
+                <button
+                  onClick={() => handleXgbToAssoc(Object.keys(xgb))}
+                  title="Send these columns to the Cramér's V Explorer and compute associations"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent"
+                >
+                  <Network className="h-3.5 w-3.5" /> Cramér's V →
+                </button>
+              </div>
+              <EvidenceGuide />
+              <XGBoostResults
+                results={xgb}
+                pca={usingAssoc ? assocPca ?? undefined : undefined}
+                impute={usingAssoc ? assocImpute ?? undefined : undefined}
+              />
             </div>
           );
         }

@@ -9,7 +9,7 @@ import uuid
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Header, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -93,11 +93,14 @@ MAX_QUERY_CONTEXT_CHARS = int(os.getenv("UAP_QUERY_MAX_CHARS", "24000"))
 # ---------------------------------------------------------------------------
 class FilterSpec(BaseModel):
     column: str
-    type: str  # "categorical", "numeric", "text"
+    type: str  # "categorical" | "boolean" | "numeric" | "date" | "text"
     values: list = None
     min_val: float = None
     max_val: float = None
     pattern: str = None
+    start: str = None        # ISO date — lower bound for a "date" filter
+    end: str = None          # ISO date — upper bound for a "date" filter
+    drop_null: bool = False   # also drop null/blank rows for this column
 
 
 class AnalysisRequest(BaseModel):
@@ -106,9 +109,26 @@ class AnalysisRequest(BaseModel):
     # is False (the analyzing.py default), clusters keep numeric "Cluster N"
     # names and raw HDBSCAN labels are passed straight to XGBoost.
     enable_tfidf: bool = False
+    # LLM cluster naming: samples reports per cluster and sends every cluster to
+    # an LLM in one request for distinct human-readable labels. Takes precedence
+    # over enable_tfidf when set. Falls back to TF-IDF then numeric on failure.
+    enable_llm: bool = False
+    llm_sample_size: int = 30
+    llm_max_words: int = 6
+    # Provider: "openai" | "deepseek" | "google" (Gemini). Auto-detected from
+    # llm_model when None. llm_api_key supplies the provider key (the server has
+    # no st.secrets); when None, get_llm_clusters falls back to config.py
+    # (OpenAI/Gemini only).
+    llm_provider: str | None = None
+    llm_model: str = "gpt-4o-mini"
+    llm_api_key: str | None = None
     min_cluster_size: int = 15
     n_neighbors: int = 15
     min_dist: float = 0.1
+    # UMAP dims HDBSCAN clusters in. >2 clusters on a separate higher-dim
+    # embedding (cleaner clusters + cuML GPU path needs dim > 5); the 2-D plot is
+    # built separately. 2 = legacy behaviour (cluster on the 2-D viz embedding).
+    cluster_dims: int = 10
     top_n: int = 32
 
 
@@ -162,6 +182,22 @@ class RagSearchRequest(BaseModel):
     top_n: int = 50
 
 
+# ── Multimodal RAG (Neon + pgvector) ───────────────────────────────────────
+class MultimodalSearchRequest(BaseModel):
+    database_url: str
+    gemini_key: str
+    query: str
+    source_type: str | None = None    # video_chunk | audio_clip | pdf_page
+    release: str | None = None
+    limit: int = 12
+    threshold: float = 0.20
+    group_by_parent: bool = True       # collapse near-duplicate A/V chunks per asset
+
+
+class MultimodalReleasesRequest(BaseModel):
+    database_url: str
+
+
 # ── Cramér's V explorer ────────────────────────────────────────────────────
 class CramersVRequest(BaseModel):
     columns: list[str] | None = None
@@ -170,11 +206,21 @@ class CramersVRequest(BaseModel):
     strong_threshold: float = 0.30
     high_threshold: int = 30
     source: str = "dataset"            # "dataset" | "parsed"
+    ci_top_n: int = 0                  # bootstrap 95% CI for the top-N strongest pairs (0 = off)
 
 
 class ContingencyRequest(BaseModel):
     col1: str
     col2: str
+    drop_missing: bool = False
+    source: str = "dataset"
+
+
+class ConditionalRequest(BaseModel):
+    """Test whether the col1–col2 association survives conditioning on a third field."""
+    col1: str
+    col2: str
+    condition_on: str
     drop_missing: bool = False
     source: str = "dataset"
 
@@ -187,6 +233,43 @@ class ColumnGroupsRequest(BaseModel):
 class XgboostRequest(BaseModel):
     columns: list[str]
     source: str = "dataset"            # "dataset" | "parsed"
+    with_cv: bool = True               # cross-validation (slower); off = holdout only
+    # Opt-in significance (slower): permutation null p-values + bootstrap stability.
+    with_significance: bool = False
+    n_perm: int = 20
+    n_boot: int = 20
+
+
+class XgboostPcaRequest(BaseModel):
+    """Optional 2nd pass: collapse each Cramér's V redundancy cluster into one PCA
+    latent index, then re-fit XGBoost on [indices + non-redundant columns]."""
+    columns: list[str]
+    source: str = "dataset"            # "dataset" | "parsed"
+    with_cv: bool = True
+    strong_threshold: float = 0.30     # Cramér's V edge for the redundancy graph
+    prune_uninformative: bool = False  # drop free columns pass 1 never split on
+    with_significance: bool = False    # permutation null + stability on the 1st pass
+    n_perm: int = 20
+    n_boot: int = 20
+
+
+class XgboostImputeRequest(BaseModel):
+    """Use the per-column models to predict (impute) each column's missing
+    values. ``use_pca`` swaps in the 2nd-pass PCA latent-index predictor space.
+    ``n_imputations`` > 1 enables multiple imputation (per-cell agreement)."""
+    columns: list[str]
+    source: str = "dataset"            # "dataset" | "parsed"
+    with_cv: bool = True
+    use_pca: bool = False
+    strong_threshold: float = 0.30
+    n_imputations: int = 1
+
+
+class InterpretRequest(BaseModel):
+    kind: str                          # "cramers" | "xgboost"
+    context: str                       # rendered table/results text from the UI
+    gemini_key: str
+    question: str | None = None        # optional user follow-up
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -209,6 +292,10 @@ def df_to_json(df: pd.DataFrame, max_rows: int = 50000, total_rows: int | None =
     return {
         "columns": list(df_subset.columns),
         "rows": df_subset.to_dict(orient="records"),
+        # Stable per-row id (the DataFrame index label, as string), aligned with
+        # `rows`, so the Data Explorer can overlay model-imputed fills onto the
+        # right cells regardless of client-side sort/filter/paging.
+        "row_ids": [str(i) for i in df_subset.index],
         # total_rows reflects the full dataset; pass it explicitly when df has
         # already been truncated upstream so the count is not misreported.
         "total_rows": total_rows if total_rows is not None else len(df),
@@ -354,7 +441,7 @@ def filter_data(filters: list[FilterSpec], state: SessionState = Depends(get_ses
         for f in filters:
             if f.column not in df.columns:
                 continue
-            if f.type == "categorical" and f.values:
+            if f.type in ("categorical", "boolean") and f.values:
                 df = df[df[f.column].astype(str).isin([str(v) for v in f.values])]
             elif f.type == "numeric":
                 if f.min_val is not None and f.max_val is not None:
@@ -365,9 +452,20 @@ def filter_data(filters: list[FilterSpec], state: SessionState = Depends(get_ses
                     df = df[df[f.column] >= f.min_val]
                 elif f.max_val is not None:
                     df = df[df[f.column] <= f.max_val]
+            elif f.type == "date" and (f.start or f.end):
+                col = pd.to_datetime(df[f.column], errors="coerce")
+                mask = col.notna()
+                if f.start:
+                    mask &= col >= pd.to_datetime(f.start, errors="coerce")
+                if f.end:
+                    mask &= col <= pd.to_datetime(f.end, errors="coerce")
+                df = df[mask]
             elif f.type == "text" and f.pattern:
                 import re
                 df = df[df[f.column].astype(str).str.contains(re.escape(f.pattern), case=False, na=False)]
+            if f.drop_null:
+                s = df[f.column]
+                df = df[s.notna() & (s.astype(str).str.strip() != "")]
         state.filtered_data = df
         return {"status": "ok", "data": df_to_json(df), "column_stats": get_column_stats(df)}
     except Exception as e:
@@ -444,10 +542,37 @@ def run_analysis(req: AnalysisRequest, state: SessionState = Depends(get_session
                     method="UMAP", n_components=2,
                     n_neighbors=req.n_neighbors, min_dist=req.min_dist,
                 )
+                if req.cluster_dims > 2:
+                    # Higher-dim clustering space (HDBSCAN runs on this); the 2-D
+                    # reduced_embeddings above stays the viz/scatter embedding.
+                    analyzer.reduce_for_clustering(
+                        method="UMAP", n_components=req.cluster_dims,
+                        n_neighbors=req.n_neighbors, min_dist=0.0,
+                    )
                 analyzer.cluster_data(method="HDBSCAN", min_cluster_size=req.min_cluster_size)
                 _labels = analyzer.__dict__["cluster_labels"]
                 row_terms = None
-                if req.enable_tfidf:
+                if req.enable_llm:
+                    # LLM naming: sample reports per cluster, label them all in
+                    # one request, then merge near-duplicate names. get_llm_clusters
+                    # already falls back to TF-IDF/numeric internally; the merge
+                    # path is best-effort, so guard the whole branch too.
+                    try:
+                        analyzer.get_llm_clusters(
+                            sample_size=req.llm_sample_size,
+                            max_words=req.llm_max_words,
+                            model=req.llm_model,
+                            provider=req.llm_provider,
+                            api_key=req.llm_api_key,
+                        )
+                        row_terms = analyzer.merge_similar_clusters(
+                            cluster_terms=analyzer.__dict__["cluster_terms"],
+                            cluster_labels=analyzer.__dict__["cluster_labels"],
+                        )
+                    except Exception as llm_err:
+                        logger.warning(f"LLM naming failed for {col}, using raw labels: {llm_err}")
+                        row_terms = None
+                elif req.enable_tfidf:
                     # TF-IDF naming + near-duplicate cluster merging. The merge
                     # path re-encodes on GPU and is best-effort; fall back to
                     # numeric labels if anything in it fails.
@@ -504,10 +629,18 @@ def run_analysis(req: AnalysisRequest, state: SessionState = Depends(get_session
                     importances_dict = bst.get_score(importance_type="gain")
                     importances = {k.replace("Analyzer_", ""): float(v) for k, v in importances_dict.items()}
                     importances = dict(sorted(importances.items(), key=lambda x: x[1], reverse=True))
-                    xgboost_results[col.replace("Analyzer_", "")] = {
+                    entry = {
                         "feature_importance": importances,
                         "accuracy": round(accuracy, 3),
                     }
+                    try:   # cross-validation (best-effort, fast GPU xgb.cv path)
+                        cv = analysis_service._xgb_cv_accuracy(
+                            data_nums.drop(columns=[col]), data_nums[col], len(categories))
+                        if cv:
+                            entry.update(cv)
+                    except Exception:
+                        pass
+                    xgboost_results[col.replace("Analyzer_", "")] = entry
                 except Exception as e:
                     logger.error(f"Error in xgboost for {col}: {e}")
                     
@@ -649,7 +782,7 @@ def get_dashboard_summary(state: SessionState = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # Parsing — LLM feature extraction (parsing.py parity, core tier)
 # ---------------------------------------------------------------------------
-from api.services import parsing_service, scu_service, rag_service, analysis_service
+from api.services import parsing_service, scu_service, rag_service, analysis_service, multimodal_service
 
 
 def _build_text_series(df: pd.DataFrame, columns: list[str]) -> pd.Series:
@@ -844,6 +977,50 @@ def scu_normalize(state: SessionState = Depends(get_session)):
     }
 
 
+@app.post("/api/scu/normalize-upload")
+async def scu_normalize_upload(file: UploadFile = File(...), state: SessionState = Depends(get_session)):
+    """Run SCU normalization on an uploaded, already-structured dataset — a
+    previously-parsed CSV/XLSX or a parsed_responses JSON. React parity for the
+    Streamlit 'load parsed data → normalize' path, so SCU normalization doesn't
+    require re-running the (paid) LLM extractor first."""
+    try:
+        contents = await file.read()
+        name = (file.filename or "").lower()
+        if name.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif name.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(contents))
+        elif name.endswith(".json"):
+            import json as _json
+            obj = _json.loads(contents.decode("utf-8"))
+            # Accept a list of records, or a {description: record} mapping (the
+            # parsed_responses.json shape) — flatten either to one row per record.
+            records = list(obj.values()) if isinstance(obj, dict) else (obj if isinstance(obj, list) else [obj])
+            df = pd.json_normalize(records)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type (CSV / XLSX / JSON).")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {e}")
+
+    try:
+        result = scu_service.normalize_df(df)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Normalization failed: {e}")
+    state.scu_normalized_df = result["df"]
+    return {
+        "status": "ok",
+        "filename": file.filename,
+        "metrics": result["metrics"],
+        "audit_markdown": result["audit_markdown"],
+        "data": df_to_json(result["df"], max_rows=5000),
+    }
+
+
 @app.post("/api/scu/filter")
 def scu_filter(req: ScuFilterRequest, state: SessionState = Depends(get_session)):
     if state.scu_normalized_df is None:
@@ -885,6 +1062,61 @@ def rag_search(req: RagSearchRequest, state: SessionState = Depends(get_session)
     }
 
 
+# ── Multimodal RAG (Neon + pgvector media archive) ──────────────────────────
+@app.post("/api/rag/multimodal/releases")
+def multimodal_releases(req: MultimodalReleasesRequest):
+    """Distinct release tags in the embeddings archive (for the UI filter)."""
+    if not req.database_url:
+        raise HTTPException(status_code=400, detail="A Neon database URL is required.")
+    return {"releases": multimodal_service.releases(req.database_url)}
+
+
+@app.post("/api/rag/multimodal/search")
+def multimodal_search(req: MultimodalSearchRequest):
+    """Text → Gemini 768-d embedding → pgvector cosine search over the archive."""
+    if not req.database_url or not req.gemini_key:
+        raise HTTPException(status_code=400, detail="A Neon database URL and a Gemini key are required.")
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Enter a text query.")
+    try:
+        results = multimodal_service.search_text(
+            req.database_url, req.gemini_key, req.query,
+            source_type=req.source_type or None, release=req.release or None,
+            limit=req.limit, threshold=req.threshold, group_by_parent=req.group_by_parent,
+        )
+        return {"status": "ok", "n_results": len(results), "results": results}
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Multimodal search failed: {e}")
+
+
+@app.post("/api/rag/multimodal/search-image")
+async def multimodal_search_image(
+    file: UploadFile = File(...),
+    database_url: str = Form(...),
+    gemini_key: str = Form(...),
+    source_type: str | None = Form(None),
+    release: str | None = Form(None),
+    limit: int = Form(12),
+    threshold: float = Form(0.20),
+    group_by_parent: bool = Form(True),
+):
+    """Image → Gemini 768-d embedding → pgvector cosine search over the archive."""
+    if not database_url or not gemini_key:
+        raise HTTPException(status_code=400, detail="A Neon database URL and a Gemini key are required.")
+    try:
+        contents = await file.read()
+        results = multimodal_service.search_image(
+            database_url, gemini_key, contents, file.content_type or "image/jpeg",
+            source_type=source_type or None, release=release or None,
+            limit=limit, threshold=threshold, group_by_parent=group_by_parent,
+        )
+        return {"status": "ok", "n_results": len(results), "results": results}
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Multimodal image search failed: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Cramér's V Categorical Association Explorer (analyzing.py parity)
 # ---------------------------------------------------------------------------
@@ -917,10 +1149,95 @@ def analysis_xgboost(req: XgboostRequest, state: SessionState = Depends(get_sess
     columns (no cluster pipeline) — fed by the Cramér's V explorer selection."""
     df = _assoc_source(state, req.source)
     try:
-        return analysis_service.xgboost_importance(df, req.columns)
+        return analysis_service.xgboost_importance(
+            df, req.columns, with_cv=req.with_cv,
+            with_significance=req.with_significance, n_perm=req.n_perm, n_boot=req.n_boot,
+        )
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"XGBoost feature importance failed: {e}")
+
+
+@app.post("/api/analysis/xgboost-pca")
+def analysis_xgboost_pca(req: XgboostPcaRequest, state: SessionState = Depends(get_session)):
+    """2nd-pass XGBoost: collapse Cramér's V redundancy clusters into PCA latent
+    indices and re-fit, returning both passes + the latent-index definitions so the
+    UI can show the first-vs-second comparison and the de-dilution gain."""
+    df = _assoc_source(state, req.source)
+    try:
+        return analysis_service.xgboost_pca_importance(
+            df, req.columns, strong_threshold=req.strong_threshold,
+            with_cv=req.with_cv, prune_uninformative=req.prune_uninformative,
+            with_significance=req.with_significance, n_perm=req.n_perm, n_boot=req.n_boot,
+        )
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"PCA 2nd-pass XGBoost failed: {e}")
+
+
+@app.post("/api/analysis/xgboost-impute")
+def analysis_xgboost_impute(req: XgboostImputeRequest, state: SessionState = Depends(get_session)):
+    """Predict each selected column's missing values from the others, returning
+    per-column model accuracy + the predicted fills so the UI can colour each
+    imputation by its model's reliability."""
+    df = _assoc_source(state, req.source)
+    try:
+        return analysis_service.xgboost_impute(
+            df, req.columns, with_cv=req.with_cv, use_pca=req.use_pca,
+            strong_threshold=req.strong_threshold, n_imputations=req.n_imputations,
+        )
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Missing-value imputation failed: {e}")
+
+
+# Tailored system prompts so the AI reads each result type with the right caveats
+# (the same "how to read disagreements" guidance shown in the UI).
+_INTERPRET_PROMPTS = {
+    "cramers": (
+        "You are a statistician helping a researcher interpret a Cramér's V categorical-association "
+        "analysis of a UAP sightings dataset. Cramér's V (0-1) is a SYMMETRIC, MARGINAL, pairwise "
+        "measure: it is not causal and does not condition on other variables; it can be inflated by "
+        "sparse contingency cells or very large N. In a few concise bullet points: name the strongest "
+        "associations and what they plausibly reflect, flag pairs that are likely redundant or "
+        "confounded by a third field, and state the caveats. Do not claim causation."
+    ),
+    "xgboost": (
+        "You are a data scientist interpreting XGBoost gain-based feature-importance results (with "
+        "cross-validation) for predicting categorical fields in a UAP dataset. Importance is "
+        "CONDITIONAL and multivariate. Concisely, per target: say what predicts it and how reliably "
+        "(use the CV mean ± std; flag likely OVERFITTING where holdout accuracy is well above the CV "
+        "mean). Crucially, remember that LOW importance can mean REDUNDANCY with a correlated feature, "
+        "NOT 'no relationship' — do not equate low importance with no association. Note plausible "
+        "interactions. Avoid causal language."
+    ),
+}
+
+
+@app.post("/api/analysis/interpret")
+def analysis_interpret(req: InterpretRequest):
+    """Send a rendered results table (Cramér's V or XGBoost) to Gemini for a
+    plain-language interpretation. The context text is built client-side from
+    what the user sees; the key is supplied per request (never stored)."""
+    system = _INTERPRET_PROMPTS.get(req.kind)
+    if system is None:
+        raise HTTPException(status_code=400, detail=f"Unknown interpretation kind: {req.kind}")
+    if not req.context.strip():
+        raise HTTPException(status_code=400, detail="No results to interpret.")
+    if not req.gemini_key:
+        raise HTTPException(status_code=400, detail="A Gemini API key is required.")
+    try:
+        import google.generativeai as genai
+
+        ask = req.question.strip() if req.question and req.question.strip() else \
+            "Interpret these results for a researcher; be specific and concise."
+        prompt = f"{system}\n\nQuestion: {ask}\n\nResults:\n{req.context}\n"
+        genai.configure(api_key=req.gemini_key)
+        model = genai.GenerativeModel("models/gemini-3.1-pro-preview")
+        response = model.generate_content([prompt])
+        return {"status": "ok", "response": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI interpretation failed: {e}")
 
 
 @app.post("/api/analysis/cramers-v")
@@ -930,7 +1247,7 @@ def analysis_cramers_v(req: CramersVRequest, state: SessionState = Depends(get_s
         return analysis_service.cramers_v_report(
             df, req.columns, drop_missing=req.drop_missing,
             exclude_trivial=req.exclude_trivial, strong_threshold=req.strong_threshold,
-            high_threshold=req.high_threshold,
+            high_threshold=req.high_threshold, ci_top_n=req.ci_top_n,
         )
     except Exception as e:
         logger.error(traceback.format_exc())
@@ -946,6 +1263,23 @@ def analysis_contingency(req: ContingencyRequest, state: SessionState = Depends(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Contingency failed: {e}")
+
+
+@app.post("/api/analysis/conditional")
+def analysis_conditional(req: ConditionalRequest, state: SessionState = Depends(get_session)):
+    """Test whether the col1–col2 association survives conditioning on a third
+    field (per-stratum Cramér's V + CMH / stratified-χ²) — the formal confounding /
+    redundancy check that pairwise Cramér's V cannot give."""
+    df = _assoc_source(state, req.source)
+    try:
+        return analysis_service.conditional_association(
+            df, req.col1, req.col2, req.condition_on, drop_missing=req.drop_missing,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Conditional association failed: {e}")
 
 
 # ---------------------------------------------------------------------------

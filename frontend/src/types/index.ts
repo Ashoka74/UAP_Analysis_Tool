@@ -19,6 +19,9 @@ export interface ColumnStat {
 export interface DataResponse {
   columns: string[];
   rows: Record<string, unknown>[];
+  // Stable per-row id aligned with `rows` (DataFrame index label), used to overlay
+  // model-imputed fills onto the right cells in the Data Explorer.
+  row_ids?: string[];
   total_rows: number;
   returned_rows: number;
 }
@@ -53,9 +56,43 @@ export interface ColumnAnalysis {
   total_points: number;
 }
 
+export interface MultimodalResult {
+  source_type: string;
+  parent_id: string;
+  source_id: string | null;
+  similarity: number | null;
+  start_seconds: number | null;
+  end_seconds: number | null;
+  page: number | null;
+  embedded_text: string | null;
+  source_url: string;
+  media_embed_url: string | null;
+  release: string | null;
+  release_date: string | null;
+  chunk_matches: number;
+}
+
+export interface MultimodalSearchResponse {
+  status: string;
+  n_results: number;
+  results: MultimodalResult[];
+}
+
 export interface XGBoostResult {
   feature_importance: Record<string, number>;
   accuracy: number;
+  // Stratified k-fold cross-validation accuracy (optional — present on the
+  // direct /api/analysis/xgboost path, absent on the cluster pipeline).
+  cv_mean?: number;
+  cv_std?: number;
+  cv_folds?: number;
+  // Number of features the model was fit on (present on the PCA 2nd pass, where
+  // redundancy clusters are collapsed so the count drops vs the raw 1st pass).
+  n_features?: number;
+  // Opt-in significance: permutation-null empirical p-value and bootstrap
+  // selection frequency per feature (only present when requested).
+  null_p?: Record<string, number>;
+  selection_freq?: Record<string, number>;
 }
 
 export interface CramersVData {
@@ -228,7 +265,7 @@ export interface ColumnGroupsResponse {
 export interface CramersVResponse {
   labels: string[];
   matrix: (number | null)[][];
-  pairs: { a: string; b: string; v: number }[];
+  pairs: { a: string; b: string; v: number; ci?: [number, number] }[];
   n_excluded: number;
   high_correlation_columns: string[];
   bands: Record<string, string[]>;
@@ -242,7 +279,29 @@ export interface ContingencyResponse {
   col_labels: string[];
   matrix: number[][];
   v: number;
+  ci?: [number, number] | null;   // 95% bootstrap CI on Cramér's V
   n: number;
+}
+
+// Conditional-association drill-down: does A–B survive conditioning on Z?
+export interface ConditionalResponse {
+  c1: string;
+  c2: string;
+  condition_on: string;
+  marginal_v: number;
+  mean_conditional_v: number | null;
+  strata: { level: string; n: number; v: number }[];
+  n_strata_used: number;
+  n_strata_dropped: number;
+  n: number;
+  test: {
+    method: string | null;
+    statistic: number | null;
+    dof: number | null;
+    p_value: number | null;
+    pooled_odds_ratio?: number;
+  };
+  verdict: 'persists' | 'attenuated' | 'explained_by_z' | 'weak_or_absent' | 'inconclusive';
 }
 
 export interface XgboostImportanceResponse {
@@ -250,4 +309,51 @@ export interface XgboostImportanceResponse {
   columns: string[];
   skipped: Record<string, string>;
   message?: string;
+}
+
+// 2nd pass: each Cramér's V redundancy cluster collapsed into one PCA latent index.
+export interface LatentCluster {
+  index_name: string;            // e.g. "PCA[coded_radar]" — the key used in importances
+  root: string;                  // most central member (the "root predictor")
+  members: string[];
+  explained_variance: number;    // variance share captured by the single component
+  loadings: { feature: string; weight: number }[]; // per-member contribution share
+}
+
+export interface XgboostPcaResponse {
+  first_pass: Record<string, XGBoostResult>;
+  second_pass: Record<string, XGBoostResult>;
+  clusters: LatentCluster[];
+  columns: string[];
+  skipped: Record<string, string>;
+  strong_threshold: number;
+  n_clusters: number;
+  pruned: string[];
+  message?: string | null;
+}
+
+// Model-based imputation: predict each column's missing cells from the others.
+export interface ImputationResult {
+  accuracy: number | null;       // model accuracy used to colour the fills (null = single observed class)
+  cv_mean?: number;
+  cv_std?: number;
+  cv_folds?: number;
+  n_missing: number;
+  n_features: number;
+  n_imputations: number;         // M draws (>1 = multiple imputation)
+  mean_conf: number | null;      // mean per-cell agreement across the M draws
+  predictions: { value: string; count: number }[]; // predicted-fill distribution
+  // Row-level predictions; conf = per-cell agreement across draws (null = single imputation).
+  sample: { row: string; value: string; conf: number | null }[];
+  sample_truncated: boolean;
+}
+
+export interface XgboostImputeResponse {
+  results: Record<string, ImputationResult>;
+  columns: string[];
+  skipped: Record<string, string>;
+  total_missing: number;
+  used_pca: boolean;
+  n_imputations: number;
+  message?: string | null;
 }

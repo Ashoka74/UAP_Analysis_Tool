@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import type { CSSProperties } from 'react';
 import {
   ChevronUp,
   ChevronDown,
@@ -9,18 +10,47 @@ import {
   Eye,
   Search,
   X,
-  FileText
+  FileText,
+  Wand2,
 } from 'lucide-react';
-import type { DataResponse } from '../../types';
+import type { DataResponse, XgboostImputeResponse } from '../../types';
 
 interface DataTableProps {
   data: DataResponse;
   maxHeight?: string;
+  // Optional model-imputed fills to overlay onto missing cells, coloured by the
+  // predicting model's accuracy (× per-cell agreement under multiple imputation).
+  imputation?: XgboostImputeResponse | null;
+  showImputed?: boolean;
+  onToggleImputed?: (v: boolean) => void;
 }
 
 type SortDir = 'asc' | 'desc' | null;
 
-export function DataTable({ data, maxHeight = '500px' }: DataTableProps) {
+const ID_KEY = '__rowid__';
+
+// Accuracy → colour ramp (red → amber at 0.6 → green at ~0.85). Mirrors the
+// Feature-Importance imputation table so the colour means the same thing here.
+function accuracyRgb(a: number): [number, number, number] {
+  const t = Math.max(0, Math.min(1, a));
+  const lerp = (x: number, y: number, p: number) => Math.round(x + (y - x) * p);
+  if (t < 0.6) {
+    const p = t / 0.6;
+    return [lerp(248, 210, p), lerp(81, 153, p), lerp(73, 34, p)];
+  }
+  const p = Math.min(1, (t - 0.6) / 0.25);
+  return [lerp(210, 63, p), lerp(153, 185, p), lerp(34, 80, p)];
+}
+
+// Cell tint for a predicted fill: hue from accuracy, opacity scaled by per-cell
+// agreement (multiple imputation) so genuinely uncertain cells read fainter.
+function fillStyle(accuracy: number | null, conf: number | null): CSSProperties {
+  const [r, g, b] = accuracy == null ? [139, 148, 158] : accuracyRgb(accuracy);
+  const alpha = 0.1 + 0.22 * (conf ?? 1);
+  return { backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha})`, color: `rgb(${r}, ${g}, ${b})` };
+}
+
+export function DataTable({ data, maxHeight = '500px', imputation, showImputed = true, onToggleImputed }: DataTableProps) {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [page, setPage] = useState(0);
@@ -49,13 +79,37 @@ export function DataTable({ data, maxHeight = '500px' }: DataTableProps) {
     setPage(0);
   };
 
+  // Per-column lookup of predicted fills, keyed by row id: col → id → {value, conf, accuracy}.
+  const fillMap = useMemo(() => {
+    const m = new Map<string, Map<string, { value: string; conf: number | null; accuracy: number | null }>>();
+    if (!imputation) return m;
+    for (const [col, r] of Object.entries(imputation.results)) {
+      const inner = new Map<string, { value: string; conf: number | null; accuracy: number | null }>();
+      for (const s of r.sample) inner.set(s.row, { value: s.value, conf: s.conf, accuracy: r.accuracy });
+      m.set(col, inner);
+    }
+    return m;
+  }, [imputation]);
+  const overlayOn = showImputed && fillMap.size > 0;
+  const predictedCells = useMemo(
+    () => (imputation ? Object.values(imputation.results).reduce((s, r) => s + r.n_missing, 0) : 0),
+    [imputation],
+  );
+
+  // Attach a stable row id (aligned with data.row_ids) so the overlay survives
+  // client-side sort/filter/paging.
+  const rowsWithId = useMemo<Record<string, unknown>[]>(
+    () => data.rows.map((r, i) => ({ ...r, [ID_KEY]: data.row_ids?.[i] ?? String(i) })),
+    [data.rows, data.row_ids],
+  );
+
   const filtered = useMemo(() => {
-    if (!searchTerm) return data.rows;
+    if (!searchTerm) return rowsWithId;
     const lower = searchTerm.toLowerCase();
-    return data.rows.filter(row =>
-      Object.values(row).some(val => String(val).toLowerCase().includes(lower))
+    return rowsWithId.filter(row =>
+      Object.entries(row).some(([k, val]) => k !== ID_KEY && String(val).toLowerCase().includes(lower))
     );
-  }, [data.rows, searchTerm]);
+  }, [rowsWithId, searchTerm]);
 
   const sorted = useMemo(() => {
     if (!sortCol || !sortDir) return filtered;
@@ -116,6 +170,21 @@ export function DataTable({ data, maxHeight = '500px' }: DataTableProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {fillMap.size > 0 && (
+            <button
+              onClick={() => onToggleImputed?.(!showImputed)}
+              title={`${predictedCells.toLocaleString()} model-predicted fills across ${fillMap.size} column(s). Filled cells are coloured by model accuracy and marked ⌁ (predicted, not observed).`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all shadow-sm ${
+                overlayOn
+                  ? 'border-accent bg-accent/15 text-accent'
+                  : 'border-border bg-elevated text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              {overlayOn ? 'Hide predicted' : 'Show predicted'}
+              <span className="opacity-60">({predictedCells.toLocaleString()})</span>
+            </button>
+          )}
           <button
             onClick={exportToCSV}
             title="Export to CSV"
@@ -191,7 +260,27 @@ export function DataTable({ data, maxHeight = '500px' }: DataTableProps) {
                   </button>
                 </td>
                 {data.columns.map((col) => {
-                  const val = row[col] != null ? String(row[col]) : '';
+                  const raw = row[col];
+                  const val = raw != null ? String(raw) : '';
+                  const isEmpty = val.trim() === '';
+                  const fill = overlayOn && isEmpty
+                    ? fillMap.get(col)?.get(String(row[ID_KEY]))
+                    : undefined;
+                  if (fill) {
+                    const acc = fill.accuracy == null ? 'n/a' : `${(fill.accuracy * 100).toFixed(0)}%`;
+                    const agree = fill.conf != null ? `, agreement ${(fill.conf * 100).toFixed(0)}%` : '';
+                    return (
+                      <td
+                        key={col}
+                        className="max-w-48 truncate px-3 py-2 font-medium tracking-tight italic"
+                        style={fillStyle(fill.accuracy, fill.conf)}
+                        title={`Predicted (not observed) — model accuracy ${acc}${agree}`}
+                      >
+                        <span className="border-b border-dotted border-current/50">{fill.value || '∅'}</span>
+                        <span className="ml-1 not-italic opacity-60">⌁</span>
+                      </td>
+                    );
+                  }
                   return (
                     <td
                       key={col}

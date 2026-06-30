@@ -9,7 +9,10 @@ import { FilterPanel } from './FilterPanel';
 import type { ColumnStat, DataResponse } from '../../types';
 
 export function DataExplorer() {
-  const { data, columnStats, setData, dataLoaded } = useStore();
+  const {
+    data, columnStats, setData, dataLoaded,
+    imputation, showImputed, setShowImputed,
+  } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeData, setActiveData] = useState<DataResponse | null>(null);
@@ -144,7 +147,13 @@ export function DataExplorer() {
       {/* Data Table */}
       {dataLoaded && displayData && (
         <Panel title="Data View" noPad>
-          <DataTable data={displayData} maxHeight="calc(100vh - 420px)" />
+          <DataTable
+            data={displayData}
+            maxHeight="calc(100vh - 420px)"
+            imputation={imputation}
+            showImputed={showImputed}
+            onToggleImputed={setShowImputed}
+          />
         </Panel>
       )}
     </div>

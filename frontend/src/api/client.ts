@@ -12,10 +12,14 @@ import type {
   ScuNormalizeResponse,
   ScuFilterResponse,
   RagSearchResponse,
+  MultimodalSearchResponse,
   CramersVResponse,
   ContingencyResponse,
+  ConditionalResponse,
   ColumnGroupsResponse,
   XgboostImportanceResponse,
+  XgboostPcaResponse,
+  XgboostImputeResponse,
 } from '../types';
 
 // API origin is configurable for split deployments (e.g. frontend on Vercel,
@@ -65,6 +69,9 @@ export const api = {
       min_val?: number;
       max_val?: number;
       pattern?: string;
+      start?: string;
+      end?: string;
+      drop_null?: boolean;
     }[]
   ): Promise<LoadDataResponse> {
     return request('/data/filter', {
@@ -95,6 +102,12 @@ export const api = {
     columns: string[],
     opts: {
       enable_tfidf?: boolean;
+      enable_llm?: boolean;
+      llm_sample_size?: number;
+      llm_max_words?: number;
+      llm_provider?: string;
+      llm_model?: string;
+      llm_api_key?: string;
       min_cluster_size?: number;
       n_neighbors?: number;
       min_dist?: number;
@@ -183,6 +196,22 @@ export const api = {
     return request('/scu/normalize', { method: 'POST', body: '{}' });
   },
 
+  // Normalize an uploaded, already-structured dataset (parsed CSV/XLSX or a
+  // parsed_responses JSON) — no prior LLM parse required.
+  scuNormalizeUpload(file: File): Promise<ScuNormalizeResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/scu/normalize-upload`, { method: 'POST', body: form }).then(
+      async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(body.detail || `Upload failed: ${res.status}`);
+        }
+        return res.json();
+      }
+    );
+  },
+
   scuFilter(criterionKeys: string[]): Promise<ScuFilterResponse> {
     return request('/scu/filter', {
       method: 'POST',
@@ -203,6 +232,52 @@ export const api = {
     });
   },
 
+  // ── Multimodal RAG (Neon + pgvector) ──────────────────────────────────
+  multimodalReleases(databaseUrl: string): Promise<{ releases: string[] }> {
+    return request('/rag/multimodal/releases', {
+      method: 'POST',
+      body: JSON.stringify({ database_url: databaseUrl }),
+    });
+  },
+
+  multimodalSearch(p: {
+    databaseUrl: string; geminiKey: string; query: string;
+    sourceType?: string; release?: string; limit?: number; threshold?: number; groupByParent?: boolean;
+  }): Promise<MultimodalSearchResponse> {
+    return request('/rag/multimodal/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        database_url: p.databaseUrl, gemini_key: p.geminiKey, query: p.query,
+        source_type: p.sourceType, release: p.release, limit: p.limit, threshold: p.threshold,
+        group_by_parent: p.groupByParent,
+      }),
+    });
+  },
+
+  multimodalSearchImage(p: {
+    file: File; databaseUrl: string; geminiKey: string;
+    sourceType?: string; release?: string; limit?: number; threshold?: number; groupByParent?: boolean;
+  }): Promise<MultimodalSearchResponse> {
+    const form = new FormData();
+    form.append('file', p.file);
+    form.append('database_url', p.databaseUrl);
+    form.append('gemini_key', p.geminiKey);
+    if (p.sourceType) form.append('source_type', p.sourceType);
+    if (p.release) form.append('release', p.release);
+    form.append('limit', String(p.limit ?? 12));
+    form.append('threshold', String(p.threshold ?? 0.2));
+    form.append('group_by_parent', String(p.groupByParent ?? true));
+    return fetch(`${BASE}/rag/multimodal/search-image`, { method: 'POST', body: form }).then(
+      async (res) => {
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(b.detail || `Image search failed: ${res.status}`);
+        }
+        return res.json();
+      }
+    );
+  },
+
   // ── Cramér's V explorer ───────────────────────────────────────────────
   cramersV(payload: {
     columns?: string[] | null;
@@ -211,6 +286,7 @@ export const api = {
     strong_threshold?: number;
     high_threshold?: number;
     source?: string;
+    ci_top_n?: number;            // bootstrap 95% CI for the top-N strongest pairs
   }): Promise<CramersVResponse> {
     return request('/analysis/cramers-v', {
       method: 'POST',
@@ -230,6 +306,20 @@ export const api = {
     });
   },
 
+  // Does the col1–col2 association survive conditioning on a third field?
+  conditional(payload: {
+    col1: string;
+    col2: string;
+    condition_on: string;
+    drop_missing?: boolean;
+    source?: string;
+  }): Promise<ConditionalResponse> {
+    return request('/analysis/conditional', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   columnGroups(payload: {
     source?: string;
     high_threshold?: number;
@@ -240,10 +330,55 @@ export const api = {
     });
   },
 
-  xgboostImportance(columns: string[], source = 'dataset'): Promise<XgboostImportanceResponse> {
+  xgboostImportance(
+    columns: string[],
+    source = 'dataset',
+    withCv = true,
+    withSignificance = false,
+  ): Promise<XgboostImportanceResponse> {
     return request('/analysis/xgboost', {
       method: 'POST',
-      body: JSON.stringify({ columns, source }),
+      body: JSON.stringify({ columns, source, with_cv: withCv, with_significance: withSignificance }),
+    });
+  },
+
+  // 2nd pass — collapse Cramér's V redundancy clusters into PCA latent indices,
+  // then re-fit XGBoost. Returns both passes + the latent-index definitions.
+  xgboostPca(
+    columns: string[],
+    source = 'dataset',
+    withCv = true,
+    strongThreshold = 0.3,
+    pruneUninformative = false,
+    withSignificance = false,
+  ): Promise<XgboostPcaResponse> {
+    return request('/analysis/xgboost-pca', {
+      method: 'POST',
+      body: JSON.stringify({
+        columns, source, with_cv: withCv,
+        strong_threshold: strongThreshold, prune_uninformative: pruneUninformative,
+        with_significance: withSignificance,
+      }),
+    });
+  },
+
+  // Predict (impute) each selected column's missing values from the others; the
+  // per-column model accuracy colours the fills in the UI. usePca swaps in the
+  // 2nd-pass PCA latent-index predictor space.
+  xgboostImpute(
+    columns: string[],
+    source = 'dataset',
+    withCv = true,
+    usePca = false,
+    strongThreshold = 0.3,
+    nImputations = 1,
+  ): Promise<XgboostImputeResponse> {
+    return request('/analysis/xgboost-impute', {
+      method: 'POST',
+      body: JSON.stringify({
+        columns, source, with_cv: withCv, use_pca: usePca,
+        strong_threshold: strongThreshold, n_imputations: nImputations,
+      }),
     });
   },
 
@@ -251,6 +386,19 @@ export const api = {
     return request('/query/gemini', {
       method: 'POST',
       body: JSON.stringify({ question, columns, gemini_key: geminiKey }),
+    });
+  },
+
+  // AI interpretation of a rendered results table (Cramér's V / XGBoost).
+  interpretAnalysis(
+    kind: 'cramers' | 'xgboost',
+    context: string,
+    geminiKey: string,
+    question?: string,
+  ): Promise<{ status: string; response: string }> {
+    return request('/analysis/interpret', {
+      method: 'POST',
+      body: JSON.stringify({ kind, context, gemini_key: geminiKey, question }),
     });
   },
 
