@@ -1,0 +1,77 @@
+# GPU backend image — RAPIDS (cuDF / cuML / cuVS) + CUDA-12 PyTorch.
+#
+# Use this ONLY on a host with an NVIDIA GPU, its driver, and the NVIDIA
+# Container Toolkit installed (so `--gpus all` / the compose GPU reservation
+# works). Without a GPU attached, cuML/cuVS can't initialise — use the CPU
+# image (Dockerfile.api) instead; the analysis code falls back to CPU there.
+#
+# Build (repo-root context; heavy — RAPIDS + torch ≈ 10 GB+):
+#   docker build -f Dockerfile.api.gpu -t ufosint-api-gpu .
+# Run:
+#   docker run --gpus all -p 8000:8000 \
+#     -v ./parsed_files_distance_embeds.h5:/app/parsed_files_distance_embeds.h5:ro \
+#     -v ./final_ufoseti_dataset.h5:/app/final_ufoseti_dataset.h5:ro \
+#     ufosint-api-gpu
+# Or via compose:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# IMPORTANT — this image can't be built/verified without a GPU, so build-test it
+# on the target host. Confirm the base tag exists and matches your host:
+#   * tags:  https://hub.docker.com/r/rapidsai/base/tags
+#   * CUDA_VERSION must be <= the CUDA your driver supports (see `nvidia-smi`).
+# nvcr.io mirror: nvcr.io/nvidia/rapidsai/base:<same-tag>
+
+ARG RAPIDS_VERSION=25.06
+ARG CUDA_VERSION=12.0
+ARG PYTHON_VERSION=3.12
+FROM rapidsai/base:${RAPIDS_VERSION}-cuda${CUDA_VERSION}-py${PYTHON_VERSION}
+
+# RAPIDS images run as the non-root `rapids` user with a conda env on PATH.
+# Switch to root for system packages; the env's python/pip stay on PATH.
+USER root
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/cache/huggingface \
+    UAP_ANALYSIS_MODE=production
+
+# poppler-utils: pdf2image (preprocessing) · libgomp1: xgboost/sklearn OpenMP
+# · curl: healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        poppler-utils libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# CUDA-12 PyTorch (matches the RAPIDS CUDA runtime). cu121 wheels bundle their
+# own CUDA libs and run on CUDA 12.x hosts. Installed first so the bare `torch`
+# in requirements.txt is already satisfied and pip won't pull another build.
+RUN pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+# App deps. cupy/cuml/cuvs/rmm come from the base image and are (intentionally)
+# NOT in requirements.txt. Constrain numpy/pandas/pyarrow to the RAPIDS-pinned
+# versions so pip can't upgrade them out from under cuDF/cuML (that would break
+# the GPU path). If a transitive dep demands a different numpy/pandas, pip errors
+# HERE at build time — fix by relaxing that dep, not by moving numpy.
+COPY requirements.txt .
+RUN pip list --format=freeze 2>/dev/null \
+        | grep -iE '^(numpy|pandas|pyarrow)==' > /tmp/rapids-constraints.txt \
+    && pip install -c /tmp/rapids-constraints.txt -r requirements.txt uvicorn \
+    && pip install "fastapi>=0.115" "python-multipart>=0.0.18"
+
+# Code + small data files. Heavy artifacts are excluded via .dockerignore and
+# mounted at runtime instead.
+COPY . .
+
+RUN mkdir -p /cache/huggingface && chmod -R a+rwX /cache
+
+EXPOSE 8000
+
+# Longer start-period than the CPU image: GPU context init + model/dataset load
+# take a while before the healthcheck should count failures.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+    CMD curl -fs http://localhost:8000/api/dashboard/summary || exit 1
+
+# If uvicorn isn't found at runtime the conda env isn't on PATH — in that case
+# wrap the command: CMD ["bash", "-lc", "uvicorn api.main:app --host 0.0.0.0 --port 8000"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

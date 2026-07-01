@@ -1,0 +1,40 @@
+# Build-context excludes for Dockerfile.api (repo-root context).
+# Keep the context small: code + small data files (CSVs, .kgl) go in; heavy
+# artifacts, envs and the frontend stay out.
+
+.git
+.venv
+**/__pycache__
+**/*.pyc
+
+# Frontend has its own image (frontend/Dockerfile)
+frontend
+frontend2
+
+# Heavy datasets — mounted at runtime, never baked in (see docker-compose.yml)
+*.h5
+uap_clusters_llm.html
+
+# Local corpora / working dirs
+UAP_PDFs
+pipeline_data
+kepler.gl
+release_*
+divided
+
+# Scratch / media
+*.png
+*.webp
+*.pkl
+*Zone.Identifier
+Untitled.ipynb
+
+# Secrets — pass keys via env or the UI, never bake into the image
+.streamlit/secrets.toml
+
+# Docker files themselves
+Dockerfile.api
+Dockerfile.api.gpu
+docker-compose.yml
+docker-compose.gpu.yml
+.dockerignore

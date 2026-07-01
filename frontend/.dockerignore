@@ -1,0 +1,7 @@
+node_modules
+dist
+# 124 MB cluster viz — served by the backend, not part of the SPA bundle
+uap_clusters_llm.html
+*Zone.Identifier
+Dockerfile
+.dockerignore

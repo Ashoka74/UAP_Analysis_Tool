@@ -1,0 +1,44 @@
+# React + FastAPI stack.
+#
+#   docker compose up --build
+#   → app on http://localhost:8080  (nginx proxies /api to the backend)
+#
+# The .h5 datasets stay on the host and are mounted read-only — keep them next
+# to this file (or adjust the paths). Models downloaded by sentence-transformers
+# persist in the hf-cache volume across restarts.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      # Host networking during *build* only — works around broken bridge DNS
+      # on WSL2 (npm/pip downloads hang or die otherwise). Harmless elsewhere.
+      network: host
+    ports:
+      - "8000:8000"
+    environment:
+      # "production" runs the real embedding/UMAP/HDBSCAN pipeline (CPU in this
+      # image — slow but correct). Use "mock" for a fast demo backend.
+      UAP_ANALYSIS_MODE: ${UAP_ANALYSIS_MODE:-production}
+      # Only needed if a browser calls :8000 directly; via the nginx proxy the
+      # requests are same-origin and CORS never triggers.
+      UAP_API_CORS_ORIGINS: ${UAP_API_CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - ./parsed_files_distance_embeds.h5:/app/parsed_files_distance_embeds.h5:ro
+      - ./final_ufoseti_dataset.h5:/app/final_ufoseti_dataset.h5:ro
+      # Optional: pre-rendered cluster visualization for /api/analysis/clusters
+      # - ./frontend/uap_clusters_llm.html:/app/frontend/uap_clusters_llm.html:ro
+      - hf-cache:/cache/huggingface
+
+  frontend:
+    build:
+      context: ./frontend
+      network: host
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  hf-cache:

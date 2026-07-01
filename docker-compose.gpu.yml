@@ -1,0 +1,29 @@
+# GPU override for docker-compose.yml — runs the FastAPI backend on the RAPIDS /
+# CUDA image (Dockerfile.api.gpu) with the host GPU attached.
+#
+# Requires an NVIDIA GPU + driver + the NVIDIA Container Toolkit on the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# The base compose already mounts the .h5 datasets + the hf-cache volume and
+# builds the frontend; this override only swaps the backend image and reserves
+# the GPU, so everything else is inherited.
+
+services:
+  api:
+    build:
+      # context (.) and build network are inherited from docker-compose.yml.
+      dockerfile: Dockerfile.api.gpu
+    environment:
+      # "production" is the point of the GPU image — the real cuML/cuVS pipeline.
+      UAP_ANALYSIS_MODE: ${UAP_ANALYSIS_MODE:-production}
+    # GPU reservation (Compose spec — honoured by `docker compose up`).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Compose v2.30+ shorthand, equivalent to the block above — uncomment to use:
+    # gpus: all
