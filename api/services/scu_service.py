@@ -46,19 +46,18 @@ def _raw_df_from_parsed(parsed_responses: dict):
     return pd.json_normalize(list(parsed_responses.values()))
 
 
-def normalize(parsed_responses: dict) -> dict:
-    """Run scu_normalizer.normalize() on parsed responses.
+def normalize_df(raw_df) -> dict:
+    """Run scu_normalizer.normalize() on an already-structured DataFrame.
 
-    Returns the normalized DataFrame plus the audit dict, its markdown render,
-    and headline eligibility metrics.
+    Used by both the parsed-responses path and the uploaded-dataset path (a
+    previously-parsed CSV/XLSX or a parsed_responses JSON), so SCU normalization
+    doesn't require re-running the LLM extractor. Returns the normalized
+    DataFrame plus the audit dict, its markdown render, and headline metrics.
     """
     import scu_normalizer
 
-    if not parsed_responses:
-        raise ValueError("No parsed responses to normalize.")
-    raw_df = _raw_df_from_parsed(parsed_responses)
-    if raw_df.empty:
-        raise ValueError("Parsed responses produced an empty DataFrame.")
+    if raw_df is None or raw_df.empty:
+        raise ValueError("Empty dataset — nothing to normalize.")
 
     norm_df, audit = scu_normalizer.normalize(raw_df)
     audit_md = scu_normalizer.audit_to_markdown(audit)
@@ -70,6 +69,13 @@ def normalize(parsed_responses: dict) -> dict:
         "has_credible_witness": int(audit.get("has_credible_witness_count", 0)),
     }
     return {"df": norm_df, "audit": audit, "audit_markdown": audit_md, "metrics": metrics}
+
+
+def normalize(parsed_responses: dict) -> dict:
+    """Run scu_normalizer.normalize() on parsed responses (parsing-flow path)."""
+    if not parsed_responses:
+        raise ValueError("No parsed responses to normalize.")
+    return normalize_df(_raw_df_from_parsed(parsed_responses))
 
 
 def filter_eligibility(norm_df, criterion_keys: list[str]) -> dict:

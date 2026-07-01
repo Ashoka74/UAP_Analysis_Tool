@@ -1,0 +1,431 @@
+{
+  "record": {
+    "id": "string — unique SCU case ID (e.g. SCU-000001)",
+    "duplicate": "string — case-ref of the original if this is a known duplicate, else blank",
+    "Multi": "enum [0, 1] — multi-event flag: 0=single event, 1=part of multi-event series",
+    "report_date": "string — Date and time the report was submitted in DD-MM-YYYY HH:MMZ format (UTC), e.g. 20-05-2024 13:13Z",
+    "BB": "string — linked Blue Book case ID if cross-referenced; null if none"
+  },
+  "study": {
+    "intentions_study_phase": [
+      "enum [P1, P2, P3, P4] — SCU Intentions Study phases this case is included in. P1=Pattern Recognition (US Atomic Warfare Complex), P2=Indications Analysis (US Atomic Warfare Complex), P3=Activity Pattern (Military & Public), P4=Indications Analysis (Military & Public). Empty if not part of the Intentions Study corpus."
+    ],
+    "analysis_code": "string — SCU composite analysis code combining phase, facility class and activity class (e.g. 'P1251', 'P12C2'); used to drive pivot tables and pattern aggregations. Empty if not coded.",
+    "reconciliation_status": "enum [pending, reconciled, excluded, U] — outcome of the SCU Quality Review reconciliation meeting. 'reconciled' = accepted into the study corpus; 'excluded' = reviewed and dropped (reason in notes); 'pending' = not yet reviewed; 'U' = status unknown.",
+    "curation_standard_passed": "enum [Y, N, U] — Y if the case passes all five SCU general curation criteria (Incident Report within 1 year, Data Quality, Anomalous Characterization, Investigation, Credibility); N if any single criterion fails; U if criteria cannot be evaluated.",
+    "sources_appearing": [
+      "enum [Sparks2020, NICAP_chrono, ClearIntent, FadedGiant, Hynek_investigation, McDonald_investigation, BlueBook, other] — all source lists/works in which this case appears. Multi-source corroboration is stronger than single-source. Empty if none recorded."
+    ]
+  },
+  "source": {
+    "name": "string — reporting database, publication or organisation (e.g. NICAP, MUFON, AFOSI)",
+    "agency": "string — coarse agency taxonomy inferred from the document (FBI, NARA-CIA, DOD, MISC, NASA); null if not indicated",
+    "collection": "string — sub-collection within the agency (e.g. 'series-38', 'hs1-834228961'); null if not indicated",
+    "documentId": "string — identifier of the upstream source document; copy if visible, else blank",
+    "pages": "string — page range within the source document (e.g. 'page_0004-page_0006'); blank if unknown",
+    "ref": "string — specific citation, case ID or URL for this case",
+    "url": "string — Direct URL to the original UFOSETI report page, e.g. https://ufoseti.org/ru/reports/3776-inoy-nlo-russian-federation-chelyabinskaya-oblast",
+    "catalog_entry": "string — UK National Archives DEFE reference (e.g. DEFE-24-1939-13)",
+    "tier": "enum [primary_investigative, secondary_investigative, reference_book, press, retrospective_personal_account, unknown] — coarse reliability tier; default 'unknown'",
+    "AUTHOR": "string — surname (and first initial) of the investigator or editor responsible for this record; may be organisation/journal name if author unknown",
+    "firstRecordedDate": "string (YYYY-MM-DD) — earliest dateline visible in the document text (cable/letter/memo date); null if not visible",
+    "contemporaneous": "enum [Y, N, U] — Y if firstRecordedDate is within one year of the sighting, N if later, U if either date is unknown",
+    "publication_year": "integer YYYY — publishing year of the reference work citing the case; null if unknown",
+    "reporting_method": "string — how the report was originally made (e.g. written statement, phone, in-person interview, online form); empty if unknown"
+  },
+  "date_time": {
+    "date": "string (YYYY-MM-DD) — calendar date of the sighting; null if unknown",
+    "year": "integer YYYY — calendar year; null if unknown",
+    "month": "integer 1-12 — calendar month; null if unknown",
+    "day": "integer 1-31 — calendar day; null if unknown",
+    "local_time": "string HH:MM — local 24-hour start time; empty if unknown",
+    "local_time_code": "string — IANA timezone abbreviation or UTC offset (e.g. EST, UTC+2)",
+    "gmt_start": "string HH:MM — start time converted to GMT/UTC; empty if unknown",
+    "day_night": "enum [D, N, U]",
+    "dateUncertainty": "enum [exact, approximate_month, approximate_year, unknown]",
+    "yearUncertainty": "enum [exact, approximate_year, approximate_decade, unknown]",
+    "duration_min": "integer — total observed duration in minutes; null if unknown",
+    "duration": "string — observed duration (free-text); null if unknown"
+  },
+  "location": {
+    "name": "string — specific location name or description of the incident site; empty if unknown",
+    "city": "string — city, town or nearest known populated place",
+    "COUNTY": "string — county or province (up to 12 chars); ~3,150 US counties; non-US uses province",
+    "state": "string — US Census two-letter code for US states; ISO 3166-2 subdivision code elsewhere; empty if not applicable",
+    "country": "string — ISO 3166-1 alpha-2 code (strict). For non-country locations use sentinels: INTL_WATERS, MOON, AQ, MULTIPLE, SCAND, UNKNOWN",
+    "latitude": "float — decimal degrees WGS-84, positive = North; null if unknown",
+    "longitude": "float — decimal degrees WGS-84, positive = East; null if unknown",
+    "type": "enum [Atomic site, Military base, Population centre, Waste facility, Water body, River, Airport, Forest, Desert, Ocean, Space flight, Mixed, Other, Rural, Missile testing, Unknown] — primary character of the location",
+    "secondaryType": "enum [same values as type, or empty] — for locations that genuinely span two types",
+    "water": "string — associated water body; null if unknown",
+    "address": "string — street address or precise address of the incident; empty if unknown",
+    "terrain": "string — terrain at the encounter site (e.g. mountain, valley, open field, forest clearing, coastal, urban); empty if unknown",
+    "associated_facility_name": "string — name of the SCU study-site facility this incident is associated with via Site Association Zone logic (matters when multiple facilities have overlapping zones, e.g. Sandia/Kirtland vs. White Sands); empty if not applicable",
+    "associated_facility_distance_km": "float — observer-to-associated-facility distance in kilometres (EUR; mi (US) ≈ value × 0.621); distinct from the observer-to-UAP distance. Null if unknown or no associated facility.",
+    "associated_facility_distance_mi": "float — observer-to-associated-facility distance in miles (US; km (EUR) ≈ value × 1.609); null if unknown or no associated facility",
+    "within_physical_security_zone": "enum [Y, N, U] — Y if the incident occurred inside the associated facility's physical security perimeter; N if outside; U if not assessed",
+    "within_radar_zone": "enum [Y, N, U] — Y if the incident occurred inside the associated facility's radar detection zone; N if outside; U if not assessed",
+    "within_air_defense_zone": "enum [Y, N, U] — Y if the incident occurred inside the associated facility's air defense zone; N if outside; U if not assessed"
+  },
+  "witness": {
+    "count": "integer — exact number of independent witnesses; null if unknown",
+    "countFreeform": "string — original phrasing when non-numeric (e.g. 'Multiple', 'Hundreds')",
+    "roles": [
+      "enum [Military, Public, Police, Pilot, Civilian, Scientist, Intelligence, Astronaut, Politician, Security] — JSON array of witness roles; no duplicates, order irrelevant"
+    ],
+    "type": "string — comma-separated subset of [Military, Public, Police, Pilot, Civilian, Scientist] — witness categories",
+    "notes": "string — rank/role qualifiers that don't belong in the roles enum (e.g. 'Naval Reserve')",
+    "NAMES": "string — principal witness surname(s); additional witnesses separated by =; confidential=initials only; organisation in parentheses; investigator name in reverse parentheses for confidential cases",
+    "AGE": "string — age of principal witness in years (2 chars); or group composition: first char=number of families, second=A/C/T/S/M/X/Y/W adult-type code",
+    "SEX": "enum [M, F, C, X] — witness sex/group: M=all male, F=all female, C=couple, X=mixed; null=unknown",
+    "occupation": "string — occupation of the principal witness; empty if unknown",
+    "experienceWithAircraft": "string — witness experience with aircraft or aerial phenomena (e.g. pilot, military aviation, astronomy background); empty if none or unknown",
+    "behavioralResponse": "string — observer's behavioural reaction during the sighting; empty if unknown",
+    "emotionalStateBeforeSighting": "string — observer's emotional state before the sighting; empty if unknown",
+    "observer_direction": "string — Compass direction the observer was facing during the sighting. Allowed values: North, North-East, East, South-East, South, South-West, West, North-West, No direction. Leave blank if unknown.",
+    "Mob": "enum [0, 1] — witness mobile: 0=stationary, 1=moving",
+    "witness_confidence": "enum [0, 1] — witness confidence in own report: 0=uncertain, 1=confident; null if unknown",
+    "location_before": "string — observer's location immediately prior to the encounter (e.g. indoors, in vehicle, on porch); empty if unknown",
+    "location_after": "string — observer's location after the encounter, if changed (e.g. returned to bed, found in field); empty if unknown",
+    "distance_from_uap_meters": "float — closest observer distance from the UAP in metres (EUR; ft (US) ≈ value × 3.281); null if unknown",
+    "distance_from_uap_feet": "float — closest observer distance from the UAP in feet (US; m (EUR) ≈ value × 0.305); null if unknown",
+    "distance_from_nhi_meters": "float — closest observer distance from any NHI/entity in metres (EUR; ft (US) ≈ value × 3.281); null if unknown",
+    "distance_from_nhi_feet": "float — closest observer distance from any NHI/entity in feet (US; m (EUR) ≈ value × 0.305); null if unknown"
+  },
+  "detection": {
+    "unaided_visual": "enum [Y, N, U] — UAP observed with the naked eye",
+    "visual_enhancing": "enum [Y, N, U] — observed through vision-enhancing optics (binoculars, telescope, night-vision)",
+    "visual_technical": "enum [Y, N, U] — recorded or observed via technical visual equipment (camera, video, FLIR, theodolite)",
+    "space_observation": "enum [Y, N, U] — observed from space or detected by space-based assets (astronaut, satellite, orbital sensor)",
+    "underwater_observation": "enum [Y, N, U] — observed underwater or detected by sub-surface sensors (sonar, submarine, diver)"
+  },
+  "object": {
+    "OBJS": "string — number of UFO objects (right-justified; -=about, +=at least; C=hundred; letter codes F/G/M/N/S; 0=no object; for trace-only cases=number of trace marks)",
+    "primary_shape": "enum [Sphere, Disc, Cigar, Triangle, Diamond, Cylinder, Boomerang, Chevron, Egg, Cone, Saturn, Cross, Rectangle, Teardrop, Fireball, Light, Orb, Tic-Tac, Cube, Pyramid, Oval, Dome, Crescent, Unknown, Other] — dominant observed shape; fold Round/Circle/Ball/Spherical into Sphere",
+    "secondary_shape": "enum [same values as primary_shape, or empty]",
+    "size": "enum [Tiny (<0.5 m / <1.6 ft), Small (0.5-3 m / 1.6-10 ft), Medium (3-10 m / 10-33 ft), Large (10-50 m / 33-164 ft), Very large (50-200 m / 164-656 ft), Massive (>200 m / >656 ft), Unknown]",
+    "sizeRangeMeters": "string — explicit metre range derived from the size band (e.g. '3-10 m / 10-33 ft'); empty if Unknown — provide both metric (m) and imperial (ft) where possible",
+    "size_meters": "float — estimated physical size in metres (EUR/metric; ft (US) ≈ value × 3.281); null if unknown",
+    "size_feet": "float — estimated physical size in feet (US/imperial; m (EUR) ≈ value × 0.305); null if unknown",
+    "angular_size": "string — apparent (angular) size: .=point source, .0=non-point, .1=≈sun/moon, .2=twice sun/moon; Poher qualitative codes: (A=immense, (B=quarter-coin at arm's length, (C=orange, (D=melon/plate, (E=40 cm, (F=1 m, (G=2 m, (H=commercial aircraft",
+    "colour": "string — colour or colour combination observed",
+    "brilliance": "enum [Brilliant, Dazzling, Halo, Fluorescent, Faintly luminous, Reflects light, Intermittently bright, Non-luminous] — luminosity descriptor; null if unknown",
+    "presenceLights": "enum [Y, N, U] — lights present on the UAP",
+    "sound": "string — description of any associated sounds; empty if none",
+    "detailedStructure": "string — description of surface, texture and structural detail; empty if unknown",
+    "changeInAppearance": "string — details of any transformations or changes in appearance; empty if none",
+    "visualClarity": "string — clarity of the object's appearance (e.g. sharp, blurred, hazy); empty if unknown",
+    "symmetry": "string — symmetry code (Fx=frontal, Sx=sagittal; digit=planes of symmetry; e.g. F0, S1, S3)",
+    "Formation": "enum [Triangular, None, Unknown, Complex, Quadrangular, Linear, Circular, Pair] — formation shape when multiple objects; null if single",
+    "description": "string — free-text shape, texture, surface markings, lighting and structural detail",
+    "altitude": "string — estimated or measured altitude (free-text) — give both metric (m/km, EUR) and imperial (ft/mi, US) where stated or convertible; empty if unknown",
+    "altitude_meters": "float — estimated or measured altitude in metres (EUR; ft (US) ≈ value × 3.281); null if unknown",
+    "altitude_feet": "float — estimated or measured altitude in feet (US; m (EUR) ≈ value × 0.305); null if unknown",
+    "speed": "string — estimated or measured speed (free-text) — give both km/h (EUR) and mph (US) where stated or convertible; empty if unknown",
+    "emission": "string — material or energy emitted by the UAP (smoke, vapour, sparks, beams, falling debris); empty if none",
+    "pulsation": "enum [Y, N, U] — rhythmic pulsation of the UAP's light or form",
+    "symbols_markings": "string — symbols, insignia or markings observed on the UAP surface; empty if none",
+    "interior_description": "string — interior surfaces of the UAP as described by witnesses who saw or entered it; empty if not applicable",
+    "interior_technology": "string — functional technology observed inside the UAP (consoles, displays, light sources); empty if not applicable",
+    "dimensional_inconsistency": "enum [Y, N, U] — interior dimensions inconsistent with exterior size (e.g. larger inside than outside)",
+    "objects_within": "string — distinct objects observed inside the UAP; empty if none"
+  },
+  "behavior": {
+    "movementPattern": "string — movement pattern (e.g. zigzagging, straight line, stationary); empty if unknown",
+    "flightCharacteristics": "string — detailed flight pattern description; empty if unknown",
+    "anomalyDuration": "string — specific times for changes in UAP appearance/behaviour; empty if unknown",
+    "landing_reported": "enum [o, n] — landing reported: o=yes, n=no",
+    "instantaneous_disappearance": "enum [o, n] — instantaneous disappearance: o=yes, n=no",
+    "azimuth_start": "float — starting azimuth in degrees (0–360); null if unknown",
+    "azimuth_end": "float — ending azimuth in degrees; null if unknown",
+    "elevation_start": "float — starting elevation angle in degrees (0–90); null if unknown",
+    "elevation_end": "float — ending elevation angle in degrees; null if unknown",
+    "distance_covered_km": "float — ground distance covered by the UAP during the observation in kilometres (EUR; mi (US) ≈ value × 0.621); null if unknown",
+    "distance_covered_mi": "float — ground distance covered by the UAP during the observation in miles (US; km (EUR) ≈ value × 1.609); null if unknown",
+    "separation": "enum [Y, N, U] — UAP separated or split into multiple objects",
+    "unification": "enum [Y, N, U] — multiple UAP merged or unified into a single object",
+    "axis_rotation": "enum [Y, N, U] — UAP rotated about its own axis",
+    "uap_bearing_from_facility": "float — UAP trajectory bearing relative to the associated facility in degrees (0–360); distinct from the start/end azimuths which are relative to the observer. Null if unknown or no associated facility.",
+    "apparently_radiation_monitoring": "enum [Y, N, U] — UAP behaviour suggestive of radiation/isotope monitoring or particulate collection at atomic sites (SCU Indicator 8); inferred from behaviour pattern",
+    "apparently_testing_physical_security": "enum [Y, N, U] — UAP behaviour suggestive of testing physical security at the facility (SCU Indicators 9, 12); inferred from behaviour pattern",
+    "apparently_testing_air_defenses": "enum [Y, N, U] — UAP behaviour suggestive of testing air defenses (SCU Indicators 10, 11); inferred from behaviour pattern, distinct from the passive aircraft-encounters flag",
+    "apparently_testing_aircraft_capabilities": "enum [Y, N, U] — UAP behaviour suggestive of testing aircraft capabilities — speed, response times, manoeuvrability (SCU Indicator 17a)",
+    "clandestine_vs_overt": "enum [clandestine, overt, mixed, unknown] — apparent disposition of the UAP toward being observed: clandestine = appeared to avoid detection; overt = appeared indifferent to detection; mixed = both phases; unknown = not assessable (SCU Indicators 19, 20)",
+    "performance": {
+      "acceleration_g": "float — observed peak acceleration in g; null if unknown",
+      "hypersonic": "enum [Y, N, U] — Y observed, N explicitly negative, U unknown/not assessed",
+      "instantaneous_acceleration": "enum [Y, N, U]",
+      "positive_lift": "enum [Y, N, U]",
+      "low_observability": "enum [Y, N, U]",
+      "trans_medium_travel": "enum [Y, N, U]",
+      "speed_mph": "float — estimated or reported speed in mph (US; km/h (EUR) ≈ value × 1.609); null if unknown",
+      "speed_kmh": "float — estimated or reported speed in km/h (EUR; mph (US) ≈ value × 0.621); null if unknown",
+      "supersonic": "enum [Y, N, U] — supersonic speed (Mach 1–5) observed, typically without sonic boom",
+      "instantaneous_direction_change": "enum [Y, N, U] — instantaneous change of direction without curving or decelerating",
+      "speed_unaffected_by_trans_medium": "enum [Y, N, U] — speed apparently unaffected by travel across media (air/water/space)"
+    }
+  },
+  "anomaly": {
+    "flight": "boolean — anomalous flight (hypersonic without sonic boom, instantaneous acceleration, trans-medium, etc.)",
+    "signal": "boolean — anomalous electronic transmissions or radio behaviour",
+    "structure": "boolean — anomalous shape, size, surface or detailed structure",
+    "occupant": "boolean — occupants observed or encountered",
+    "summary": "string — one-sentence justification for any of the above being true",
+    "validated": "enum [Y, N, U] — Y if an official investigative body (USAF, FBI, AARO, NICAP, etc.) reviewed the case and could not produce a conventional explanation; N if the same body produced a conventional explanation; U if no official review conclusion is stated in the source",
+    "biologicalEntity": "enum [Y, N, U] — Y if the source describes or alleges recovery, encounter, or direct contact with a non-human biological entity (living or deceased); N if explicitly none; U if unknown or not mentioned",
+    "materialRecovery": "enum [Y, N, U] — Y if the source describes or alleges physical recovery of craft debris, material fragments, or other non-biological physical evidence attributable to the UAP; N if explicitly none; U if unknown or not mentioned"
+  },
+  "engagement": {
+    "engagement_type": {
+      "close_approach": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP made a close approach (<30 m / <98 ft) to witnesses, vehicles or structures",
+      "electronic_transmissions": "enum [P, S, blank] — P=primary, S=secondary engagement type; electronic signals attributed to the UAP were detected",
+      "interactive_flight": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP flight appeared to react to or interact with observers or aircraft",
+      "interference_weapons": "enum [P, S, blank] — P=primary, S=secondary engagement type; weapons systems were interfered with or disabled",
+      "loitering": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP hovered, circled or loitered for an extended period",
+      "military_intrusions": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP intruded into a secured installation or restricted airspace",
+      "no_engagement": "enum [P, S, blank] — P=primary, S=secondary engagement type; set to P only when no other engagement type applies",
+      "occupant_encounter": "enum [P, S, blank] — P=primary, S=secondary engagement type; occupants were directly encountered by witnesses",
+      "occupant_observed": "enum [P, S, blank] — P=primary, S=secondary engagement type; occupants were visually observed from a distance, no encounter",
+      "radical_flight": "enum [P, S, blank] — P=primary, S=secondary engagement type; physically impossible manoeuvres (right-angle turns, instant acceleration, sudden reversal)"
+    },
+    "engagement_flags": {
+      "active_radar_jamming": "enum [Y, N, U]",
+      "aircraft_encounters": "enum [Y, N, U]",
+      "aircraft_engagement": "enum [Y, N, U]",
+      "coded_radar": "enum [Y, N, U]",
+      "directed_radar": "enum [Y, N, U]",
+      "during_missile_test": "enum [Y, N, U]",
+      "multiple_interactive_flight": "enum [Y, N, U]",
+      "over_military_installation": "enum [Y, N, U]",
+      "radar_jamming": "enum [Y, N, U]",
+      "radar_tracking": "enum [Y, N, U]",
+      "radio_interference": "enum [Y, N, U]",
+      "during_atomic_bomber_alert": "enum [Y, N, U] — case coincides with an active atomic bomber alert mission (SCU Indicator 15a)",
+      "during_atomic_bombing_exercise": "enum [Y, N, U] — case coincides with an atomic bombing exercise (SCU Indicator 15b)",
+      "during_air_defense_exercise": "enum [Y, N, U] — case coincides with a continental air defense exercise (SCU Indicator 15c)",
+      "during_atomic_weapons_test": "enum [Y, N, U] — case coincides with an atomic weapons test (SCU Indicator 13); distinct from the broader nuclear-involvement flag in effects",
+      "during_manned_space_launch": "enum [Y, N, U] — case associated with a manned space launch (SCU Indicator 6)",
+      "at_commercial_nuclear_plant": "enum [Y, N, U] — case at a commercial nuclear power plant (SCU Indicator 7); finer-grained than location.type = 'Atomic site'",
+      "mobile_atomic_platform_type": "enum [submarine, carrier, none, unknown] — case associated with a mobile atomic weapons platform (SCU Indicator 16); 'none' = explicitly not at such a platform",
+      "false_iff_response": "enum [Y, N, U] — UAP apparently produced false duplication of IFF (Identification Friend or Foe) radar responses (SCU Indicator 17b); distinct from the coded-radar flag which only flags coded radar behaviour"
+    },
+    "communicationAttempts": "string — perceived attempts at communication from the UAP; empty if none",
+    "uap_response": "string — how the UAP responded to witness, vehicle or aircraft actions (approach, signalling, pursuit, evasion); empty if none",
+    "belligerence": "enum [Y, N, U] — hostile or aggressive action by the UAP toward witnesses, vehicles or aircraft"
+  },
+  "military": {
+    "facility_name": "string — name of the military base, nuclear site or government facility; empty if not applicable",
+    "facility_type": "enum [Aircraft testing, Atomic weapons assembly facilities, Atomic weapons deployment, Atomic weapons stockpile sites, Facility type unknown, ICBM Minuteman III MRV, ICBM Sites, Materials Production, Military base, Missile testing, Other, Population centre, Radioactive materials production plants, Reactor Facility, Space flight, Weapons Deployment Base, Weapons Design & Assembly, Weapons Stockpile, Airport, Unknown, None] — use None when the facility type is unknown",
+    "military_public": "enum [Military, Public, Mixed, None] — use None when the military/public character of the location is unknown",
+    "reported_by": [
+      "enum [Military, Public, Police, Pilot, Intelligence] — JSON array of who officially reported the case"
+    ],
+    "comments": "string — source notes on the military relevance or sensitivity of the case"
+  },
+  "effects": {
+    "physical_effects": "enum [Y, N, U] — Y if physical effects on people, animals, vehicles or environment were reported",
+    "communication": "enum [Y, N, U] — Y if communication interference or anomalous signals were reported",
+    "atomic_related": "enum [Y, N, U] — Y if the event involved an atomic/nuclear site, material or weapon",
+    "humanInjury": "enum [Y, N, U] — Y if physical injury to human witnesses was explicitly reported (burns, radiation sickness, temporary blindness, trauma, neurological effects, etc.); N if the source explicitly states no injury; U if not mentioned. Do NOT infer from 'physical_effects' alone — requires direct textual evidence of human bodily harm.",
+    "humanInjuryNotes": "string — type and severity of injury as described in the source (e.g. 'radiation burns to hands and face', 'temporary paralysis lasting 3 days'); empty if humanInjury is N or U",
+    "text": "string — free-text description of communication anomalies and physical effects",
+    "electromagneticEffects": "string — any disturbances in electronic devices; empty if none",
+    "interactionWithEnvironment": "string — effects on surroundings; empty if none",
+    "wildlifeBehavior": "string — any unusual animal behaviour; empty if none",
+    "temporalAnomalies": "string — reports of lost time or time discrepancies; empty if none",
+    "psychologicalEffects": "string — psychological/emotional effects on the observer; empty if none",
+    "subsequentEffects": "string — physical or psychological effects after the sighting; empty if none",
+    "Trace": "enum [0, 1] — physical trace left: 0=no, 1=yes",
+    "atmospheric_radiation": "enum [Y, N, U] — anomalous atmospheric radiation detected or reported in connection with the event",
+    "structural_displacement": "enum [Y, N, U] — physical structures or objects displaced or moved during the event",
+    "surface_impression": "enum [Y, N, U] — impressions left in the ground surface (landing-gear marks, depressions, flattened vegetation)",
+    "surface_damage": "enum [Y, N, U] — damage to ground surface or vegetation (scorching, burns, dehydration)",
+    "time_differential_min": "integer — unexplained time differential in minutes (lost or gained time); null if none or unknown",
+    "unexplained_healing": "enum [Y, N, U] — unexplained healing of a witness condition reported after the event",
+    "unexplained_pregnancy": "enum [Y, N, U] — unexplained pregnancy reported in connection with the event",
+    "unexplained_progeny": "enum [Y, N, U] — unexplained progeny or hybrid offspring alleged",
+    "biological_foreign_object": "enum [Y, N, U] — unexplained biological foreign object (implant) found in or on a witness",
+    "human_fatality": "enum [Y, N, U] — human fatality attributed to the event"
+  },
+  "entities": {
+    "presenceHumanoids": "enum [Y, N, U] — humanoids present",
+    "presenceHumanoids_notes": "string — qualifiers (e.g. 'reported via telepathy', 'in photograph'); empty if none",
+    "entity_count": "string — number of entities (0 if none); null if unknown",
+    "entity_type": "string — entity/occupant type description (~58 unique, sparse); null if none",
+    "Height": "float — reported height of the Ufonaut/entity in feet (US; m (EUR) ≈ value × 0.305); null if none or unknown",
+    "height_meters": "float — reported height of the Ufonaut/entity in metres (EUR; ft (US) ≈ value × 3.281); null if none or unknown",
+    "Uniform": "string — uniform or clothing description of the Ufonaut/entity; null if none or unknown",
+    "entity_actions": "string — actions performed by entities (comma-separated, sparse); null if none",
+    "morphology": {
+      "skin_color": "string — skin colour of the entity; empty if unknown",
+      "skin_notes": "string — other skin description (texture, lustre); empty if none",
+      "large_head": "enum [Y, N, U] — head disproportionately large relative to body",
+      "head_notes": "string — other head description; empty if none",
+      "hair": "enum [Y, N, U] — hair present",
+      "hair_color": "string — hair colour; empty if none or unknown",
+      "hair_location": "string — where hair was present (head, face, body); empty if none",
+      "eyes": "string — general eye presence/description; empty if unknown",
+      "eye_size": "string — eye size (e.g. large, small, human-like); empty if unknown",
+      "eye_shape": "string — eye shape (e.g. almond, round, wrap-around); empty if unknown",
+      "eye_color": "string — eye colour; empty if unknown",
+      "eye_notes": "string — other eye description (pupils, lids, glow); empty if none",
+      "nose": "string — nose presence/description; empty if unknown",
+      "nose_size": "string — nose size; empty if unknown",
+      "mouth": "string — mouth presence/description; empty if unknown",
+      "chin": "string — chin description; empty if unknown",
+      "teeth": "string — teeth description; empty if unknown",
+      "ears": "string — ear presence/description; empty if unknown",
+      "arms": "string — arm description (length, proportion, number); empty if unknown",
+      "hands": "string — hand description (fingers, claws, webbing); empty if unknown",
+      "headwear": "string — headwear (helmet, hood, visor); empty if none",
+      "body": "string — torso/body build description; empty if unknown",
+      "legs": "string — leg description; empty if unknown",
+      "feet": "string — feet/footwear description; empty if unknown",
+      "clothing_color": "string — clothing colour (clothing description lives in 'uniform'); empty if unknown",
+      "movement": "string — how the entity moved (walking, gliding, floating); empty if unknown"
+    },
+    "tools": {
+      "description": "string — tools or devices carried/used by entities; empty if none",
+      "size": "string — tool size; empty if unknown",
+      "color": "string — tool colour; empty if unknown",
+      "function": "string — observed or apparent tool function; empty if unknown"
+    }
+  },
+  "contact": {
+    "abduction": "enum [Y, N, U] — witness reports being taken or abducted by NHI",
+    "multiple_abductions": "enum [Y, N, U] — witness reports more than one abduction experience",
+    "generational_contact": "enum [Y, N, U] — NHI contact reported across multiple generations of the witness's family",
+    "physical_examination": "enum [Y, N, U] — witness reports a physical examination performed by NHI",
+    "human_sample_collection": "enum [Y, N, U] — collection of human biological samples reported (tissue, blood, reproductive material)",
+    "sexual_function": "enum [Y, N, U] — procedures or interactions involving sexual or reproductive function reported",
+    "message_content": "string — content of any message communicated by the NHI/UAP; empty if none",
+    "message_of_warning": "enum [Y, N, U] — communicated message contained a warning (war, environment, technology)"
+  },
+  "environment": {
+    "generalDescription": "string — description of the weather; empty if unknown",
+    "cloudCover": "string — cloud cover percentage or description; empty if unknown",
+    "visibility": "string — visibility conditions (e.g. clear, partially cloudy); empty if unknown",
+    "extremePhenomena": "string — any extreme weather conditions; empty if none",
+    "moon_present": "enum [0, 1] — moon above horizon: 0=no, 1=yes"
+  },
+  "evidence": {
+    "evidence": [
+      {
+        "mediaType": "enum [photographic, video, radar_trace, audio, instrumented, physical_sample, sketch]",
+        "availability": "enum [available, not_available, attempted_failed, referenced_not_seen, inconclusive]",
+        "url": "string — direct link if available, else empty",
+        "description": "string — qualifiers (e.g. '8mm film exposed 10 seconds', 'sketch by witness')",
+        "chainOfCustody": "string — provenance notes if recorded"
+      }
+    ],
+    "radarData": "enum [Available, Not available, Unknown] — radar data availability",
+    "radarDataNotes": "string — qualifiers (e.g. 'tracked by theodolite', 'controller had no contact')",
+    "airTrafficCommunications": "string — reports from nearby aircraft or control towers; empty if none",
+    "environmental_sample": "enum [Y, N, U] — environmental sample collected (soil, vegetation, water)",
+    "biological_sample": "enum [Y, N, U] — biological sample collected (tissue, blood, plant material)",
+    "analytical_tests": "string — analytical or diagnostic tests performed on evidence or witnesses (lab analysis, medical exam, radiation measurement); empty if none"
+  },
+  "classification": {
+    "HYNEK": "enum [NL, ND, NO, DD, DL, DO, RV, RR, CE1, CE2, CE3, CE4, AM, BH, CM, CR, MIB, TC] — Hynek extended classification: NL=Nocturnal Light, ND=Nocturnal Disc, NO=Nocturnal Object, DD=Daylight Disc, DL=Daylight Light, DO=Daylight Object, RV=Radar-Visual, RR=Radar only, CE1–CE4=Close Encounters, AM=Animal Mutilation, BH=Black Helicopter, CM=Cattle Mutilation, CR=Crash Retrieval, MIB=Men in Black, TC=Physical Trace only",
+    "VALLEE": "enum [AN1, AN2, AN3, AN4, AN5, FB1, FB2, FB3, FB4, FB5, CE1, CE2, CE3, CE4, CE5, MA1, MA2, MA3, MA4, MA5] — Vallée classification: AN=Anomaly, FB=Flyby, CE=Close Encounter, MA=Manoeuvre; sub-type 1–5 indicates increasing physical/experiential involvement",
+    "Cat": "enum [1, 2, 3, 4, 5, 6, 7, 8, 9, 11] — NICAP/NSID phenomenological category: 1=Nocturnal lights, 2=Daylight discs, 3=Radar cases, 4=Close encounters (CE I–IV), 5=Photographic cases, 6=Physical traces, 7=Medical effects on witnesses, 8=Animal reactions, 9=Electromagnetic effects, 11=Unclassified/other",
+    "PAN": "enum [A, B, C, D] — GEIPAN/PAN classification: A=identified, B=probably identified, C=insufficient data, D=unidentified",
+    "ar_code": "string — UFOCAT two-part Anomaly-Reliability code, format A{0-3}R{0-6}. A = anomaly level (0 Not Anomalous → 3 Anomalous); R = evidence reliability (0 Hoax/Mistake → 6 Irrefutable Public Data). E.g. A2R2 = Probably Anomalous | Reliable Source. Leave blank if unknown."
+  },
+  "assessment": {
+    "contradictsUap": "boolean — true if the source itself states the incident was NOT a UAP (film defect, balloon, weather, hoax, sarcastic/diplomatic usage)",
+    "explanationCategory": "enum [conventional_tech, weather, celestial, hoax, misidentification, redacted_explained, unknown] — populated only when contradictsUap is true; sub-classifies the type of conventional explanation given by the source. Use 'unknown' when contradictsUap is true but the source does not specify the explanation type.",
+    "originalAdjudication": "string — verbatim conclusion by the investigating authority as quoted in the document; null if no adjudication appears",
+    "originalAdjudicationType": "enum [unidentified, explained, dismissed, no_investigation, not_stated] — coded reading of the adjudication; use 'not_stated' when the document is silent",
+    "trustScore": "integer 0–100 — reliability score for the UAP/UFO report; null if not assessed",
+    "trustScoreNotes": "string — one-sentence justification listing which dimensions drove trustScore",
+    "CR": "integer 0–5 — credibility rating",
+    "ET": "integer 0–5 — strangeness/exceptionality rating",
+    "notes": "string — short justification for contradictsUap, or any other parse-time annotation",
+    "icd203_score": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 likelihood score: -3=almost no chance/remote (1–5%), -2=very unlikely/highly improbable (5–20%), -1=unlikely/improbable (20–45%), 0=roughly even chance/odds (45–55%) or no data, 1=likely/probable (55–80%), 2=very likely/highly probable (80–95%), 3=almost certainly/nearly certain (95–99%). Distinct from the 0–100 trust score: applies to per-case relevance to intention scenarios, not to per-case reliability."
+  },
+  "scenarios": {
+    "military": {
+      "general_military_survey": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "atomic_weapons_survey": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "atomic_warfare_prevention": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "military_aggression": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      }
+    },
+    "military_public": {
+      "survey_behavioral": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "recognition": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "contact": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "communication": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "collaboration": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "unilateral_assistance": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      },
+      "unilateral_exploitation": {
+        "data_quality": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 data-quality score for this scenario",
+        "pattern_support": "enum [-3, -2, -1, 0, 1, 2, 3] — ICD 203 pattern-support score for this scenario",
+        "notes": "string — analyst justification for the scores; empty if none"
+      }
+    }
+  },
+  "investigation": {
+    "investigatorClass": "enum [USAF, NICAP, MUFON, FBI, CIA, NASA, AARO, law_enforcement, civilian_research, press_only, none, other]",
+    "startDate": "string (YYYY-MM-DD) — when the investigation began; null if unknown",
+    "lagDays": "integer — days between sighting and start of investigation; null if unknown",
+    "timeliness": "enum [timely, late, unknown] — timely = lagDays <= 365 (SCU Criterion 1); late = lagDays > 365",
+    "reports_within_1_month_of_sighting": "enum [Y, N, U] — Y if the report or field investigation was initiated within one month of the observation; finer-grained than the SCU Criterion 1 one-year rule",
+    "reports_within_1_year_of_sighting": "enum [Y, N, U] — Y if the report or field investigation was initiated within one year of the observation (SCU Criterion 1, the one-year timeliness rule)",
+    "authenticities": "string — UFOSETI investigation status. Allowed values: Unconfirmed (report received, not yet reviewed), Under investigation (active review in progress), Investigation was made (review completed), Investigation suspended (review halted, no conclusion), Insufficient data (not enough information to assess), Repetition (duplicate or repeat of a known sighting). Leave blank if unknown.",
+    "officialResponses": "string — governmental or scientific responses; empty if none",
+    "reported_to_government": "enum [Y, N, U] — case was reported to a government body"
+  },
+  "narrative": {
+    "description": "string — free-text witness narrative",
+    "DenseNarrativeSection": "string — short free-form dense narrative description of the event from an omniscient perspective, including any relevant information",
+    "rawText": "string — un-truncated narrative text of the source"
+  },
+  "context": {
+    "previousActivity": "string — history of similar sightings in the area; empty if none",
+    "historicalComparisons": "string — references to similar historical sightings; empty if none",
+    "sightingFrequency": "string — frequency of sightings by this observer; empty if unknown",
+    "Typ_Obs": "enum [Visual: distant, Visual: close, Visual: close with beings, Entities only] — type of observation",
+    "TYPE_OF_PLANE_AND_WITNESSES": "string — aircraft type and witness description"
+  }
+}

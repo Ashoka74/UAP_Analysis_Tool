@@ -762,7 +762,7 @@ FORMAT_SCU_V3 = {
 }
 
 # ---------------------------------------------------------------------------
-# FORMAT_SCU_V1 — "SCU v1" parsing schema (the default extraction format)
+# FORMAT_SCU_V1 — "SCU v1" parsing schema (compact SCU schema)
 #
 # The same field set as FORMAT_SCU_V3, minus two blocks:
 #   • sightingDetails — the verbose nested narrative group
@@ -776,6 +776,28 @@ FORMAT_SCU_V3 = {
 # ---------------------------------------------------------------------------
 _SCU_V1_DROP = ("sightingDetails", "manifest")
 FORMAT_SCU_V1 = {k: v for k, v in FORMAT_SCU_V3.items() if k not in _SCU_V1_DROP}
+
+# ---------------------------------------------------------------------------
+# FORMAT_MASTER_SCU_V1 — "MasterSCU v1" parsing schema (the default)
+#
+# The full canonical SCU master schema, loaded from uap_master_schema.json so
+# the field set stays in sync with that single source of truth. It is the most
+# complete schema in the app: record/study provenance, source, date_time,
+# location, witness, detection, object, behavior(+performance), anomaly,
+# engagement(types/flags), military, effects, entities(+morphology/tools),
+# contact, environment, evidence, classification, assessment, scenarios,
+# investigation, narrative and context. Falls back to FORMAT_SCU_V3 if the JSON
+# file is unavailable, so the app always starts.
+# ---------------------------------------------------------------------------
+import json as _json
+from pathlib import Path as _Path
+try:
+    FORMAT_MASTER_SCU_V1 = _json.loads(
+        (_Path(__file__).resolve().parent / "uap_master_schema.json")
+        .read_text(encoding="utf-8")
+    )
+except Exception:
+    FORMAT_MASTER_SCU_V1 = FORMAT_SCU_V3
 
 # ---------------------------------------------------------------------------
 # Merged compact schema — used by the Markdown-folder ingestion agent.
