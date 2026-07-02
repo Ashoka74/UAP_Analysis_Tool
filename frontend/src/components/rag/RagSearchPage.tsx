@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Search, AlertTriangle, Key, Sparkles } from 'lucide-react';
+import { Search, AlertTriangle, Key, Sparkles, Table2, Film } from 'lucide-react';
 import { api } from '../../api/client';
 import { useStore } from '../../store/useStore';
 import { Panel } from '../common/Panel';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { DataTable } from '../data/DataTable';
+import { MultimodalSearch } from './MultimodalSearch';
 import type { RagSearchResponse } from '../../types';
 
 export function RagSearchPage() {
   const { data, dataLoaded, cohereKey, setCohereKey, setPage } = useStore();
+  const [tab, setTab] = useState<'dataset' | 'multimodal'>('dataset');
   const [selectedCols, setSelectedCols] = useState<string[]>([]);
   const [question, setQuestion] = useState('');
   const [topN, setTopN] = useState(50);
@@ -46,113 +48,139 @@ export function RagSearchPage() {
     }
   };
 
-  if (!dataLoaded) {
-    return (
-      <Panel title="No Data Loaded">
-        <p className="text-sm text-text-muted">
-          Load a dataset first from the{' '}
-          <button onClick={() => setPage('data')} className="text-accent hover:underline">
-            Data Explorer
-          </button>
-          . RAG search reranks the loaded (and filtered) dataset.
-        </p>
-      </Panel>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <Panel title="Dataset RAG Search" subtitle="Semantic rerank over the loaded dataset via Cohere">
-        <div className="space-y-4">
-          {/* Config row */}
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs text-text-muted">Cohere API Key</label>
-              <div className="relative">
-                <Key className="absolute left-2.5 top-2 h-3.5 w-3.5 text-text-muted" />
-                <input
-                  type="password"
-                  value={cohereKey}
-                  onChange={(e) => setCohereKey(e.target.value)}
-                  placeholder="Enter API key..."
-                  className="w-full rounded border border-border bg-deep py-1.5 pl-8 pr-3 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-text-muted">Top results: {topN}</label>
-              <input
-                type="range"
-                min={10}
-                max={100}
-                step={5}
-                value={topN}
-                onChange={(e) => setTopN(Number(e.target.value))}
-                className="mt-2 w-full accent-accent"
-              />
-            </div>
-          </div>
+      {/* Tab bar */}
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {([
+          { id: 'dataset', label: 'Dataset RAG (Cohere)', icon: Table2 },
+          { id: 'multimodal', label: 'Multi-Modal (Neon)', icon: Film },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-medium transition-colors ${
+              tab === id ? 'border-accent text-accent' : 'border-transparent text-text-muted hover:text-text-secondary'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" /> {label}
+          </button>
+        ))}
+      </div>
 
-          {/* Columns */}
-          <div>
-            <label className="mb-1.5 block text-xs text-text-muted">Columns to search</label>
-            <div className="flex flex-wrap gap-2">
-              {columns.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => toggle(c)}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                    selectedCols.includes(c)
-                      ? 'border-accent bg-accent-dim/30 text-accent-bright'
-                      : 'border-border bg-raised text-text-secondary hover:border-border-bright'
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
+      {tab === 'multimodal' && <MultimodalSearch />}
 
-          {/* Question */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Sparkles className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" />
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                placeholder="Ask a question to rank relevant reports..."
-                className="w-full rounded-md border border-border bg-deep py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-              />
-            </div>
-            <button
-              onClick={runSearch}
-              disabled={loading}
-              className="flex items-center gap-2 rounded-md bg-accent-dim px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
-            >
-              <Search className="h-4 w-4" />
-              {loading ? 'Searching…' : 'Search'}
+      {tab === 'dataset' && !dataLoaded && (
+        <Panel title="No Data Loaded">
+          <p className="text-sm text-text-muted">
+            Load a dataset first from the{' '}
+            <button onClick={() => setPage('data')} className="text-accent hover:underline">
+              Data Explorer
             </button>
-          </div>
-        </div>
-      </Panel>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger">
-          <AlertTriangle className="h-4 w-4" /> {error}
-        </div>
+            . Dataset RAG reranks the loaded (and filtered) dataset. The{' '}
+            <button onClick={() => setTab('multimodal')} className="text-accent hover:underline">
+              Multi-Modal
+            </button>{' '}
+            tab needs no dataset.
+          </p>
+        </Panel>
       )}
 
-      {loading && <LoadingSpinner text="Reranking with Cohere..." />}
+      {tab === 'dataset' && dataLoaded && (
+        <>
+          <Panel title="Dataset RAG Search" subtitle="Semantic rerank over the loaded dataset via Cohere">
+            <div className="space-y-4">
+              {/* Config row */}
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-text-muted">Cohere API Key</label>
+                  <div className="relative">
+                    <Key className="absolute left-2.5 top-2 h-3.5 w-3.5 text-text-muted" />
+                    <input
+                      type="password"
+                      value={cohereKey}
+                      onChange={(e) => setCohereKey(e.target.value)}
+                      placeholder="Enter API key..."
+                      className="w-full rounded border border-border bg-deep py-1.5 pl-8 pr-3 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-text-muted">Top results: {topN}</label>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={topN}
+                    onChange={(e) => setTopN(Number(e.target.value))}
+                    className="mt-2 w-full accent-accent"
+                  />
+                </div>
+              </div>
 
-      {result && (
-        <Panel
-          title="Reranked Results"
-          subtitle={`${result.n_results} results · searched ${result.searched_columns.join(', ')}`}
-          noPad
-        >
-          <DataTable data={result.data} maxHeight="calc(100vh - 380px)" />
-        </Panel>
+              {/* Columns */}
+              <div>
+                <label className="mb-1.5 block text-xs text-text-muted">Columns to search</label>
+                <div className="flex flex-wrap gap-2">
+                  {columns.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => toggle(c)}
+                      className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                        selectedCols.includes(c)
+                          ? 'border-accent bg-accent-dim/30 text-accent-bright'
+                          : 'border-border bg-raised text-text-secondary hover:border-border-bright'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Question */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Sparkles className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" />
+                  <input
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && runSearch()}
+                    placeholder="Ask a question to rank relevant reports..."
+                    className="w-full rounded-md border border-border bg-deep py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={runSearch}
+                  disabled={loading}
+                  className="flex items-center gap-2 rounded-md bg-accent-dim px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
+                >
+                  <Search className="h-4 w-4" />
+                  {loading ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+            </div>
+          </Panel>
+
+          {error && (
+            <div className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger">
+              <AlertTriangle className="h-4 w-4" /> {error}
+            </div>
+          )}
+
+          {loading && <LoadingSpinner text="Reranking with Cohere..." />}
+
+          {result && (
+            <Panel
+              title="Reranked Results"
+              subtitle={`${result.n_results} results · searched ${result.searched_columns.join(', ')}`}
+              noPad
+            >
+              <DataTable data={result.data} maxHeight="calc(100vh - 380px)" />
+            </Panel>
+          )}
+        </>
       )}
     </div>
   );

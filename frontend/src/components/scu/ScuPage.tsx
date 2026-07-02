@@ -5,12 +5,14 @@ import {
   Play,
   Filter,
   FileText,
+  Upload,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useStore } from '../../store/useStore';
 import { Panel } from '../common/Panel';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { DataTable } from '../data/DataTable';
+import { Markdown } from '../common/Markdown';
 import type {
   ScuCriteriaResponse,
   ScuNormalizeResponse,
@@ -40,6 +42,21 @@ export function ScuPage() {
     setFiltered(null);
     try {
       const res = await api.scuNormalize();
+      setNorm(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Normalization failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Normalize an uploaded, already-structured dataset (no prior LLM parse).
+  const normalizeUpload = async (file: File) => {
+    setLoading(true);
+    setError(null);
+    setFiltered(null);
+    try {
+      const res = await api.scuNormalizeUpload(file);
       setNorm(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Normalization failed');
@@ -78,30 +95,53 @@ export function ScuPage() {
         title="SCU Normalization"
         subtitle="Canonicalise parsed data and derive the SCU five-criterion eligibility gate"
         actions={
-          <button
-            onClick={normalize}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-md bg-accent-dim px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {loading ? 'Normalizing…' : 'Run Normalization'}
-          </button>
+          <div className="flex items-center gap-2">
+            <label
+              title="Normalize an already-structured dataset (parsed CSV / XLSX / parsed_responses JSON) without re-parsing"
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload dataset
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,.json"
+                className="hidden"
+                disabled={loading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) normalizeUpload(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            <button
+              onClick={normalize}
+              disabled={loading || !parsedReady}
+              title={parsedReady ? undefined : 'No parsed data in session — parse a dataset or upload one'}
+              className="flex items-center gap-2 rounded-md bg-accent-dim px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {loading ? 'Normalizing…' : 'Run on parsed data'}
+            </button>
+          </div>
         }
       >
         {!parsedReady && !norm && (
           <p className="text-sm text-text-muted">
-            Normalization runs on the parsed responses from the{' '}
+            Run SCU normalization on the parsed responses from the{' '}
             <button onClick={() => setPage('parsing')} className="text-accent hover:underline">
               Parsing
             </button>{' '}
-            step. Parse a dataset first, then return here.
+            step — or <span className="text-accent">Upload dataset</span> to normalize an
+            already-structured file (a previously-parsed CSV/XLSX or a <code>parsed_responses</code> JSON)
+            without re-running the extractor.
           </p>
         )}
         {parsedReady && !norm && (
           <p className="text-sm text-text-muted">
-            Parsed data is ready. Click <span className="text-accent">Run Normalization</span> to
-            canonicalise country/state codes, witness roles and craft shape/size bands, and compute
-            the SCU eligibility criteria.
+            Parsed data is ready. Click <span className="text-accent">Run on parsed data</span> (or{' '}
+            <span className="text-accent">Upload dataset</span>) to canonicalise country/state codes,
+            witness roles and craft shape/size bands, and compute the SCU eligibility criteria.
           </p>
         )}
       </Panel>
@@ -112,7 +152,7 @@ export function ScuPage() {
         </div>
       )}
 
-      {loading && <LoadingSpinner text="Normalizing parsed responses..." />}
+      {loading && <LoadingSpinner text="Normalizing dataset..." />}
 
       {norm && (
         <>
@@ -202,9 +242,9 @@ export function ScuPage() {
           {/* Audit report */}
           {norm.audit_markdown && (
             <Panel title="Normalization Audit">
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded bg-deep p-3 text-[11px] leading-relaxed text-text-secondary">
-                {norm.audit_markdown}
-              </pre>
+              <div className="max-h-96 overflow-auto rounded bg-deep/40 p-3">
+                <Markdown>{norm.audit_markdown}</Markdown>
+              </div>
             </Panel>
           )}
 

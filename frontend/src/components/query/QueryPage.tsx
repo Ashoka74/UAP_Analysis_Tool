@@ -3,6 +3,7 @@ import { Send, Key, AlertTriangle, Sparkles, User, Bot } from 'lucide-react';
 import { api } from '../../api/client';
 import { useStore } from '../../store/useStore';
 import { Panel } from '../common/Panel';
+import { Markdown } from '../common/Markdown';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -173,7 +174,11 @@ export function QueryPage() {
                     : 'border border-border bg-raised text-text-primary'
                 }`}
               >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                {msg.role === 'assistant' ? (
+                  <Markdown>{msg.content}</Markdown>
+                ) : (
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                )}
                 <p className="mt-1 text-[10px] opacity-50">
                   {msg.timestamp.toLocaleTimeString()}
                 </p>

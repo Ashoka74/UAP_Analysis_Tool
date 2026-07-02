@@ -11,6 +11,29 @@ interface ActiveFilter {
   min_val?: number;
   max_val?: number;
   pattern?: string;
+  start?: string;
+  end?: string;
+  drop_null?: boolean;
+}
+
+// Filter types the user can pick per column (mirrors the Streamlit DataProcessor:
+// categorical multiselect, numeric range, date range, text regex). Binary columns
+// are filtered as categorical.
+const TYPE_OPTIONS = [
+  { id: 'categorical', label: 'Categorical' },
+  { id: 'numeric', label: 'Numeric' },
+  { id: 'date', label: 'Date' },
+  { id: 'text', label: 'Text' },
+];
+
+// Best-guess default type for a column (the user can override via the selector).
+function defaultType(c?: ColumnStat): string {
+  if (!c) return 'text';
+  const dt = (c.dtype || '').toLowerCase();
+  if (dt.includes('date') || dt.includes('time')) return 'date';
+  if (c.top_values) return 'categorical';
+  if (c.min != null) return 'numeric';
+  return 'text';
 }
 
 interface FilterPanelProps {
@@ -188,8 +211,7 @@ export function FilterPanel({ columns, onApply }: FilterPanelProps) {
   const addFilter = () => {
     if (columns.length === 0) return;
     const col = columns[0];
-    const type = col.top_values ? 'categorical' : col.min != null ? 'numeric' : 'text';
-    setFilters([...filters, { id: ++filterId, column: col.name, type }]);
+    setFilters([...filters, { id: ++filterId, column: col.name, type: defaultType(col) }]);
   };
 
   const removeFilter = (id: number) => {
@@ -222,13 +244,17 @@ export function FilterPanel({ columns, onApply }: FilterPanelProps) {
             {filters.map((f) => {
               const colInfo = columns.find((c) => c.name === f.column);
               return (
-                <div key={f.id} className="flex items-start gap-2 rounded bg-raised p-2">
+                <div key={f.id} className="rounded bg-raised p-2">
+                <div className="flex items-start gap-2">
                   <select
                     value={f.column}
                     onChange={(e) => {
                       const newCol = columns.find((c) => c.name === e.target.value);
-                      const type = newCol?.top_values ? 'categorical' : newCol?.min != null ? 'numeric' : 'text';
-                      updateFilter(f.id, { column: e.target.value, type, values: undefined, pattern: undefined, min_val: undefined, max_val: undefined });
+                      updateFilter(f.id, {
+                        column: e.target.value, type: defaultType(newCol),
+                        values: undefined, pattern: undefined, min_val: undefined,
+                        max_val: undefined, start: undefined, end: undefined,
+                      });
                     }}
                     className="mt-0.5 rounded border border-border bg-deep px-2 py-1 text-xs text-text-primary"
                   >
@@ -236,6 +262,21 @@ export function FilterPanel({ columns, onApply }: FilterPanelProps) {
                       <option key={c.name} value={c.name}>
                         {c.name}
                       </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={f.type}
+                    onChange={(e) => updateFilter(f.id, {
+                      type: e.target.value,
+                      values: undefined, pattern: undefined, min_val: undefined,
+                      max_val: undefined, start: undefined, end: undefined,
+                    })}
+                    title="Filter type"
+                    className="mt-0.5 rounded border border-border bg-deep px-2 py-1 text-xs text-text-secondary"
+                  >
+                    {TYPE_OPTIONS.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
                     ))}
                   </select>
 
@@ -269,6 +310,24 @@ export function FilterPanel({ columns, onApply }: FilterPanelProps) {
                     </div>
                   )}
 
+                  {f.type === 'date' && (
+                    <div className="mt-0.5 flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={f.start ?? ''}
+                        onChange={(e) => updateFilter(f.id, { start: e.target.value || undefined })}
+                        className="rounded border border-border bg-deep px-2 py-1 text-xs text-text-primary"
+                      />
+                      <span className="text-text-muted">→</span>
+                      <input
+                        type="date"
+                        value={f.end ?? ''}
+                        onChange={(e) => updateFilter(f.id, { end: e.target.value || undefined })}
+                        className="rounded border border-border bg-deep px-2 py-1 text-xs text-text-primary"
+                      />
+                    </div>
+                  )}
+
                   {f.type === 'categorical' && (
                     <CategoricalValuePicker
                       column={f.column}
@@ -284,6 +343,16 @@ export function FilterPanel({ columns, onApply }: FilterPanelProps) {
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
+                </div>
+                <label className="mt-1.5 flex items-center gap-1.5 text-[10px] text-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={!!f.drop_null}
+                    onChange={(e) => updateFilter(f.id, { drop_null: e.target.checked })}
+                    className="accent-accent"
+                  />
+                  Drop null / blank rows for this column
+                </label>
                 </div>
               );
             })}
