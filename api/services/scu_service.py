@@ -46,20 +46,22 @@ def _raw_df_from_parsed(parsed_responses: dict):
     return pd.json_normalize(list(parsed_responses.values()))
 
 
-def normalize_df(raw_df) -> dict:
+def normalize_df(raw_df, column_map: dict | None = None) -> dict:
     """Run scu_normalizer.normalize() on an already-structured DataFrame.
 
     Used by both the parsed-responses path and the uploaded-dataset path (a
     previously-parsed CSV/XLSX or a parsed_responses JSON), so SCU normalization
-    doesn't require re-running the LLM extractor. Returns the normalized
-    DataFrame plus the audit dict, its markdown render, and headline metrics.
+    doesn't require re-running the LLM extractor. ``column_map`` ({canonical:
+    actual}) manually overrides the automatic input-column mapping. Returns the
+    normalized DataFrame, audit, markdown, headline metrics, and the resolved
+    column mapping (for the editable mapping UI).
     """
     import scu_normalizer
 
     if raw_df is None or raw_df.empty:
         raise ValueError("Empty dataset — nothing to normalize.")
 
-    norm_df, audit = scu_normalizer.normalize(raw_df)
+    norm_df, audit = scu_normalizer.normalize(raw_df, column_map=column_map)
     audit_md = scu_normalizer.audit_to_markdown(audit)
 
     metrics = {
@@ -68,14 +70,23 @@ def normalize_df(raw_df) -> dict:
         "in_scu_window": int(audit.get("in_scu_window_count", 0)),
         "has_credible_witness": int(audit.get("has_credible_witness_count", 0)),
     }
-    return {"df": norm_df, "audit": audit, "audit_markdown": audit_md, "metrics": metrics}
+    mapping = {
+        "resolved": audit.get("column_mapping", {}),
+        "methods": audit.get("column_mapping_methods", {}),
+        "scores": audit.get("column_mapping_scores", {}),
+        "unmatched": audit.get("column_mapping_unmatched", []),
+        "expected": audit.get("expected_input_columns", []),
+        "actual_columns": audit.get("input_columns", []),
+    }
+    return {"df": norm_df, "audit": audit, "audit_markdown": audit_md,
+            "metrics": metrics, "mapping": mapping, "source_df": raw_df}
 
 
-def normalize(parsed_responses: dict) -> dict:
+def normalize(parsed_responses: dict, column_map: dict | None = None) -> dict:
     """Run scu_normalizer.normalize() on parsed responses (parsing-flow path)."""
     if not parsed_responses:
         raise ValueError("No parsed responses to normalize.")
-    return normalize_df(_raw_df_from_parsed(parsed_responses))
+    return normalize_df(_raw_df_from_parsed(parsed_responses), column_map=column_map)
 
 
 def filter_eligibility(norm_df, criterion_keys: list[str]) -> dict:

@@ -56,6 +56,7 @@ class SessionState:
         self.parsed_responses = None      # {description: parsed JSON dict}
         self.parsed_df = None             # flat parsed-responses DataFrame
         self.scu_normalized_df = None     # scu_normalizer.normalize() output
+        self.scu_source_df = None         # raw input df, kept so a column-map override can re-normalize
         self.last_accessed = time.time()
 
 sessions = {}
@@ -868,6 +869,27 @@ async def parse_upload(file: UploadFile = File(...), state: SessionState = Depen
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/parse/use-loaded")
+def parse_use_loaded(state: SessionState = Depends(get_session)):
+    """Use the dataset already loaded in the Data Explorer (state.filtered_data /
+    dataset) as the parse source — no separate upload needed. Returns the same
+    shape as /api/parse/upload so the UI can treat it identically."""
+    df = state.filtered_data if state.filtered_data is not None else state.dataset
+    if df is None or getattr(df, "empty", True):
+        raise HTTPException(
+            status_code=400,
+            detail="No dataset loaded. Load or filter a dataset in the Data Explorer first.",
+        )
+    state.parse_source_df = df
+    return {
+        "status": "ok",
+        "filename": "(loaded dataset)",
+        "data": df_to_json(df, max_rows=200),
+        "columns": list(df.columns),
+        "total_rows": len(df),
+    }
+
+
 @app.post("/api/parse/estimate")
 def parse_estimate(req: ParseEstimateRequest, state: SessionState = Depends(get_session)):
     if state.parse_source_df is None:
@@ -931,6 +953,10 @@ def parse_run(req: ParseRunRequest, state: SessionState = Depends(get_session)):
         "n_total": result["n_total"],
         "n_failed": len(result["errors"]),
         "errors": result["errors"][:10],
+        # Distinct signal for an unfunded/invalid account (the run aborted early
+        # rather than firing a doomed call per row) so the UI can flag it clearly.
+        "fatal": result.get("fatal", False),
+        "fatal_message": result.get("fatal_message"),
         "data": df_to_json(df, max_rows=2000),
     }
 
@@ -969,10 +995,12 @@ def scu_normalize(state: SessionState = Depends(get_session)):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Normalization failed: {e}")
     state.scu_normalized_df = result["df"]
+    state.scu_source_df = result["source_df"]   # kept for column-map re-runs
     return {
         "status": "ok",
         "metrics": result["metrics"],
         "audit_markdown": result["audit_markdown"],
+        "mapping": result["mapping"],
         "data": df_to_json(result["df"], max_rows=5000),
     }
 
@@ -1012,11 +1040,43 @@ async def scu_normalize_upload(file: UploadFile = File(...), state: SessionState
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Normalization failed: {e}")
     state.scu_normalized_df = result["df"]
+    state.scu_source_df = df                    # kept for column-map re-runs
     return {
         "status": "ok",
         "filename": file.filename,
         "metrics": result["metrics"],
         "audit_markdown": result["audit_markdown"],
+        "mapping": result["mapping"],
+        "data": df_to_json(result["df"], max_rows=5000),
+    }
+
+
+class ScuRemapRequest(BaseModel):
+    """Manual column-map override: {canonical_input: actual_column}. Re-runs the
+    normalizer on the session's raw SCU source with the override applied."""
+    column_map: dict[str, str]
+
+
+@app.post("/api/scu/remap")
+def scu_remap(req: ScuRemapRequest, state: SessionState = Depends(get_session)):
+    if state.scu_source_df is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No SCU source data in session. Run normalization (or upload) first.",
+        )
+    try:
+        result = scu_service.normalize_df(state.scu_source_df, column_map=req.column_map)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Re-normalization failed: {e}")
+    state.scu_normalized_df = result["df"]
+    return {
+        "status": "ok",
+        "metrics": result["metrics"],
+        "audit_markdown": result["audit_markdown"],
+        "mapping": result["mapping"],
         "data": df_to_json(result["df"], max_rows=5000),
     }
 

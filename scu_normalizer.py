@@ -111,6 +111,128 @@ PERFORMANCE_FLAG_COLUMNS = [
     "performance.positive_lift",
 ]
 
+# ── Input-column contract + auto-mapping ────────────────────────────────────
+# The raw input columns this normalizer reads. Any parsed schema whose fields
+# sit at different dotted paths (e.g. MasterSCU_v1 nests `object.primary_shape`,
+# `engagement.engagement_type.*`, `behavior.performance.*` where this code reads
+# `craft.primary_shape`, `engagement_type.*`, `performance.*`) is auto-mapped
+# onto these names by ``resolve_column_mapping`` before normalization, so the
+# five-criterion gate isn't silently starved of NaN. A manual override map wins
+# over the automatic match.
+EXPECTED_INPUT_COLUMNS = [
+    "location.country", "location.state", "location.type",
+    "date_time.year", "date_time.month", "date_time.day", "date_time.day_night",
+    "craft.primary_shape", "craft.size",
+    "witness.roles", "witness.type", "witness.count",
+    "assessment.contradictsUap", "sightingDetails.trustScore",
+    "investigation.source", "investigation.timeliness",
+    "military.facility_name", "military.facility_type", "military.military_public",
+    "sightingDetails.uapCharacteristics.presenceHumanoids",
+    *EFFECTS_FLAG_COLUMNS, *ENGAGEMENT_TYPE_COLUMNS, *ENGAGEMENT_FLAG_COLUMNS,
+    *PERFORMANCE_FLAG_COLUMNS,
+]
+
+
+# Known-schema aliases, consulted after an exact hit but before the suffix /
+# leaf / fuzzy heuristics. These pin the gate inputs whose heuristic match is
+# ambiguous or impossible against MasterSCU_v1's layout — e.g. `craft.size`'s
+# leaf ("size") collides with `entities.tools.size`, and `investigation.source`
+# has no path/leaf relative in the master schema (its equivalent is the
+# top-level `source.name`). First candidate present in the data wins.
+CANONICAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "craft.primary_shape": ("object.primary_shape",),
+    "craft.size": ("object.size",),
+    "investigation.source": ("source.name",),
+    "sightingDetails.trustScore": ("assessment.trustScore",),
+    "sightingDetails.uapCharacteristics.presenceHumanoids": ("entities.presenceHumanoids",),
+}
+
+
+def _match_one(canonical: str, actual_cols: list[str], fuzzy: bool, threshold: float):
+    """Best actual column for one expected canonical name. Cascade:
+    exact → suffix (canonical is a tail of a deeper path) → unique leaf name →
+    fuzzy (difflib ratio on full path or leaf). Returns (actual, method, score)
+    or (None, "unmatched", 0.0)."""
+    import difflib
+
+    lower = {a: a.lower() for a in actual_cols}
+    cl = canonical.lower()
+    leaf = canonical.split(".")[-1].lower()
+
+    if canonical in actual_cols:
+        return canonical, "exact", 1.0
+
+    # known-schema alias (e.g. MasterSCU_v1 re-parented / renamed fields)
+    for alias in CANONICAL_ALIASES.get(canonical, ()):
+        hit = next((a for a in actual_cols if lower[a] == alias.lower()
+                    or lower[a].endswith("." + alias.lower())), None)
+        if hit is not None:
+            return hit, "alias", 0.98
+
+    # suffix: an actual path that ends in ".<canonical>" (extra parent prefix)
+    suf = [a for a in actual_cols if lower[a] == cl or lower[a].endswith("." + cl)]
+    if len(suf) == 1:
+        return suf[0], "suffix", 0.99
+    # unique leaf-name match
+    leafm = [a for a in actual_cols if a.split(".")[-1].lower() == leaf]
+    if len(leafm) == 1:
+        return leafm[0], "leaf", 0.9
+    if not fuzzy:
+        if suf:
+            return suf[0], "suffix?", 0.7
+        return (leafm[0], "leaf?", 0.7) if leafm else (None, "unmatched", 0.0)
+    # fuzzy — restrict to leaf candidates when several, else all columns
+    cands = leafm or suf or actual_cols
+    best, best_r = None, 0.0
+    for a in cands:
+        r = max(
+            difflib.SequenceMatcher(None, cl, lower[a]).ratio(),
+            difflib.SequenceMatcher(None, leaf, a.split(".")[-1].lower()).ratio(),
+        )
+        if r > best_r:
+            best_r, best = r, a
+    if best is not None and best_r >= threshold:
+        note = "fuzzy" + ("/ambiguous" if len(cands) > 1 and cands is leafm else "")
+        return best, note, round(best_r, 2)
+    return None, "unmatched", 0.0
+
+
+def resolve_column_mapping(actual_cols, manual: dict | None = None, *,
+                           fuzzy: bool = True, threshold: float = 0.80,
+                           expected: list | None = None) -> dict:
+    """Map each expected canonical input column to an actual dataframe column.
+
+    ``manual`` (``{canonical: actual}``) overrides the automatic match. Returns
+    ``{"mapping": {canonical: actual}, "methods": {canonical: how}, "scores":
+    {...}, "unmatched": [...]}`` — the mapping is what ``apply_column_mapping``
+    aliases, and the rest is audit surfaced to the UI for manual correction."""
+    actual = list(actual_cols)
+    manual = manual or {}
+    expected = expected if expected is not None else EXPECTED_INPUT_COLUMNS
+    mapping, methods, scores, unmatched = {}, {}, {}, []
+    for canon in expected:
+        if canon in manual and manual[canon] in actual:
+            mapping[canon], methods[canon], scores[canon] = manual[canon], "manual", 1.0
+            continue
+        a, how, sc = _match_one(canon, actual, fuzzy, threshold)
+        if a is None:
+            unmatched.append(canon)
+        else:
+            mapping[canon], methods[canon], scores[canon] = a, how, sc
+    return {"mapping": mapping, "methods": methods, "scores": scores, "unmatched": unmatched}
+
+
+def apply_column_mapping(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
+    """Alias matched actual columns to the canonical names ``normalize`` reads.
+    Non-destructive: copies ``df[actual]`` to a new ``canonical`` column (only
+    when the canonical isn't already present and actual != canonical)."""
+    out = df.copy()
+    for canon, actual in mapping.items():
+        if actual == canon or canon in out.columns or actual not in out.columns:
+            continue
+        out[canon] = out[actual]
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Lookup tables
@@ -595,8 +717,16 @@ def _is_truthy_flag(series: pd.Series) -> pd.Series:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def normalize(df: pd.DataFrame, *, column_map: dict | None = None,
+              auto_map: bool = True, fuzzy: bool = True) -> tuple[pd.DataFrame, dict]:
     """Run all normalizations and the SCU five-criterion gate.
+
+    Before normalizing, input columns are auto-mapped onto the canonical names
+    this code reads (``auto_map``, exact→suffix→leaf→fuzzy) so schemas that nest
+    fields differently (e.g. MasterSCU_v1's ``object.*`` / ``engagement.*`` /
+    ``behavior.performance.*``) still resolve. ``column_map`` (``{canonical:
+    actual}``) is a manual override that wins over the automatic match. The
+    resolved mapping + how each column matched is returned in the audit.
 
     Returns (normalized_df, audit_dict).
     """
@@ -615,6 +745,19 @@ def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     }
 
     out = df.copy()
+
+    # 0. Auto-map the parsed schema's columns onto the canonical names the gate
+    #    reads (+ any manual override), so re-parented fields aren't lost as NaN.
+    if auto_map or column_map:
+        res = resolve_column_mapping(list(out.columns), manual=column_map, fuzzy=fuzzy)
+        out = apply_column_mapping(out, res["mapping"])
+        audit["column_mapping"] = res["mapping"]
+        audit["column_mapping_methods"] = res["methods"]
+        audit["column_mapping_scores"] = res["scores"]
+        audit["column_mapping_unmatched"] = res["unmatched"]
+        # Surfaced so a UI can render the editable mapping (canonical ← actual).
+        audit["input_columns"] = list(df.columns)
+        audit["expected_input_columns"] = list(EXPECTED_INPUT_COLUMNS)
 
     # 1. Drop columns that are entirely empty.
     present_to_drop = [

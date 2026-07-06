@@ -304,10 +304,16 @@ def run_parse(descriptions: list[str], schema_json: str, *, provider: str,
     )
     parsed = parser.parse_responses()
     df = parsed_responses_to_df(parsed)
+    errors = list(parser.last_errors)
+    # A fatal error (no quota / bad key / billing) aborts the whole run; surface
+    # it distinctly so the UI can say "fix your account" instead of "N rows failed".
+    fatal = next((e for e in errors if e.startswith("FATAL:")), None)
     return {
         "parsed_responses": parsed,
         "df": df,
-        "errors": list(parser.last_errors),
+        "errors": errors,
+        "fatal": fatal is not None,
+        "fatal_message": (fatal[len("FATAL:"):].strip() if fatal else None),
         "n_ok": len(parsed),
         "n_total": len(texts),
     }

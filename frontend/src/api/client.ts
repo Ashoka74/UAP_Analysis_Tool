@@ -160,6 +160,12 @@ export const api = {
     );
   },
 
+  // Use the dataset already loaded in the Data Explorer as the parse source
+  // (same response shape as uploadParseFile — no separate upload needed).
+  parseUseLoaded(): Promise<ParseUploadResponse> {
+    return request('/parse/use-loaded', { method: 'POST' });
+  },
+
   estimateParse(
     columns: string[],
     formatJson: string,
@@ -210,6 +216,15 @@ export const api = {
         return res.json();
       }
     );
+  },
+
+  // Re-run normalization on the session's raw SCU source with a manual
+  // column-map override ({canonical_input: actual_column}).
+  scuRemap(columnMap: Record<string, string>): Promise<ScuNormalizeResponse> {
+    return request('/scu/remap', {
+      method: 'POST',
+      body: JSON.stringify({ column_map: columnMap }),
+    });
   },
 
   scuFilter(criterionKeys: string[]): Promise<ScuFilterResponse> {

@@ -141,7 +141,8 @@ class UAPAnalyzer:
         self.data = data
         self.column = column
         self.embeddings = None
-        self.reduced_embeddings = None
+        self.reduced_embeddings = None      # 2-D, for visualisation
+        self.cluster_embeddings = None      # higher-dim, for HDBSCAN (optional)
         self.cluster_labels = None
         self.cluster_names = None
         self.cluster_terms = None 
@@ -216,7 +217,8 @@ class UAPAnalyzer:
     def reduce_dimensionality(self, method='UMAP', n_components=2,
                                pca_preprocess=True, pca_components=50, **kwargs):
         """
-        Reduces the dimensionality of embeddings using the specified method.
+        Reduce the embeddings to `n_components` dims for VISUALISATION and store
+        the result in ``self.reduced_embeddings`` (typically 2-D for plotting).
 
         When a GPU is available and cuML is installed, UMAP and PCA run on the GPU
         (60-300x faster than CPU).  An optional PCA pre-reduction step compresses
@@ -230,7 +232,48 @@ class UAPAnalyzer:
             pca_components (int): PCA target dims used only as a pre-reduction step.
             **kwargs: Forwarded to the UMAP/PCA constructor.
         """
-        logging.info(f"Reducing dimensionality using {method}")
+        logging.info(f"Reducing dimensionality (viz) using {method}")
+        self.reduced_embeddings = self._reduce_embeddings(
+            method=method, n_components=n_components,
+            pca_preprocess=pca_preprocess, pca_components=pca_components, **kwargs,
+        )
+        logging.info(f"Viz embedding: {self.reduced_embeddings.shape[1]}-D "
+                     f"({'GPU' if _CUML_AVAILABLE else 'CPU'})")
+
+    def reduce_for_clustering(self, method='UMAP', n_components=10,
+                              pca_preprocess=True, pca_components=50,
+                              min_dist=0.0, **kwargs):
+        """
+        Reduce the embeddings to a higher-dimensional CLUSTERING space (default
+        10-D) stored in ``self.cluster_embeddings``. When set, :meth:`cluster_data`
+        runs HDBSCAN on this instead of the 2-D viz embedding.
+
+        Clustering on a ~10-D UMAP rather than the 2-D scatter is the practice the
+        UMAP authors recommend: 2-D over-compresses the manifold and produces
+        spurious density merges/splits, whereas a higher-dim embedding preserves
+        topology for cleaner clusters. It also makes the cuML GPU HDBSCAN path
+        worthwhile — the GPU gate in :meth:`cluster_data` wants dim > 5.
+        ``min_dist`` defaults to 0.0, which packs points tightly (better for
+        density-based clustering than the viz default of 0.1).
+
+        Note: because clusters are found in N-D but plotted in the separate 2-D
+        embedding, points that look adjacent in the scatter may belong to
+        different clusters, and vice-versa.
+        """
+        logging.info(f"Reducing dimensionality (clustering) using {method}")
+        self.cluster_embeddings = self._reduce_embeddings(
+            method=method, n_components=n_components,
+            pca_preprocess=pca_preprocess, pca_components=pca_components,
+            min_dist=min_dist, **kwargs,
+        )
+        logging.info(f"Clustering embedding: {self.cluster_embeddings.shape[1]}-D "
+                     f"({'GPU' if _CUML_AVAILABLE else 'CPU'})")
+
+    def _reduce_embeddings(self, method='UMAP', n_components=2,
+                           pca_preprocess=True, pca_components=50, **kwargs):
+        """Shared UMAP/PCA reduction core. Returns a float32 ndarray (it does NOT
+        store the result). GPU-accelerated via cuML when available. Used by both
+        :meth:`reduce_dimensionality` (viz) and :meth:`reduce_for_clustering`."""
         embeddings = np.array(self.embeddings, dtype=np.float32)
 
         # PCA pre-reduction: collapse 768→50 before UMAP to cut cost ~50x
@@ -262,8 +305,7 @@ class UAPAnalyzer:
         result = reducer.fit_transform(embeddings)
         if hasattr(result, 'get'):      # CuPy → NumPy
             result = result.get()
-        self.reduced_embeddings = np.array(result, dtype=np.float32)
-        logging.info(f"Dimensionality reduced using {method} ({'GPU' if _CUML_AVAILABLE else 'CPU'})")
+        return np.array(result, dtype=np.float32)
 
     def cluster_data(self, method='HDBSCAN', **kwargs):
         """
@@ -278,7 +320,11 @@ class UAPAnalyzer:
             **kwargs: Forwarded to the clusterer constructor.
         """
         logging.info(f"Clustering data using {method}")
-        embeddings = np.array(self.reduced_embeddings, dtype=np.float32)
+        # Cluster on the dedicated higher-dim clustering embedding when present
+        # (better cluster quality + viable cuML GPU path); otherwise fall back to
+        # the 2-D viz embedding (legacy behaviour).
+        source = self.cluster_embeddings if self.cluster_embeddings is not None else self.reduced_embeddings
+        embeddings = np.array(source, dtype=np.float32)
 
         # cuML HDBSCAN/KMeans only beats CPU when both N and dim are large.
         # Benchmarks: 50k×2D → GPU 40× slower; 300k×50D → GPU 13× faster.
@@ -400,7 +446,239 @@ class UAPAnalyzer:
         self.cluster_terms = pd.Categorical(self.cluster_terms)
         logging.info("Cluster naming completed.")
 
+    def get_llm_clusters(
+        self,
+        sample_size: int = 30,
+        max_words: int = 6,
+        api_key: str | None = None,
+        model: str = "gpt-4o-mini",
+        provider: str | None = None,
+        max_chars: int = 500,
+        max_clusters_per_call: int = 40,
+        seed: int = 42,
+    ):
+        """
+        Name clusters with an LLM instead of TF-IDF keyword extraction.
 
+        For every non-noise cluster, up to ``sample_size`` report excerpts are
+        sampled. ALL clusters' samples are then sent to the model in a SINGLE
+        request (batched only when there are more than ``max_clusters_per_call``
+        clusters) so it sees every cluster at once and can assign distinct,
+        mutually non-duplicated labels of at most ``max_words`` words each.
+
+        The result is stored in ``self.cluster_terms`` as a ``pd.Categorical``
+        with one label per non-noise cluster id (sorted ascending) — the exact
+        shape produced by :meth:`get_tf_idf_clusters`, so the downstream
+        ``merge_similar_clusters`` / plotting / XGBoost code is unchanged.
+
+        On any LLM failure the method falls back to TF-IDF naming, and finally
+        to numeric ``"Cluster N"`` placeholders, so it never raises for an API
+        problem.
+
+        Args:
+            sample_size (int): Max report excerpts sampled per cluster.
+            max_words (int): Hard cap on the word count of every label.
+            api_key (str | None): LLM key; falls back to ``config.API_KEY``.
+            model (str): Chat model id — an OpenAI/DeepSeek key from ``_PRICING``
+                or a Gemini model (e.g. ``"models/gemini-3.1-pro-preview"``).
+            provider (str | None): Force ``"openai"``/``"deepseek"``/``"google"``
+                (Google = Gemini); auto-detected from ``model`` when ``None``.
+            max_chars (int): Per-excerpt truncation length (token-cost guard).
+            max_clusters_per_call (int): Clusters per request before batching.
+            seed (int): RNG seed for reproducible per-cluster sampling.
+        """
+        assert self.cluster_labels is not None, "Data has not been clustered yet."
+
+        labels_arr = np.asarray(self.cluster_labels)
+        # Match get_tf_idf_clusters: one name per non-noise cluster id, sorted.
+        cluster_ids = [int(c) for c in np.unique(labels_arr) if c != -1]
+        # Records which naming path actually produced the labels so callers can
+        # surface a warning when the LLM path silently degraded:
+        # "llm" | "tfidf_fallback" | "numeric_fallback" | "empty".
+        self.naming_method = None
+        self.naming_error = None
+        if not cluster_ids:
+            self.cluster_terms = pd.Categorical([])
+            self.naming_method = "empty"
+            logging.warning("get_llm_clusters: no non-noise clusters to name.")
+            return
+
+        texts = self.data[f'{self.column}'].astype(str).reset_index(drop=True)
+        rng = np.random.default_rng(seed)
+
+        # Sample up to `sample_size` excerpts per cluster (truncated for token cost).
+        samples: dict[int, list[str]] = {}
+        for cid in cluster_ids:
+            idx = np.where(labels_arr == cid)[0]
+            if len(idx) > sample_size:
+                idx = rng.choice(idx, size=sample_size, replace=False)
+            excerpts = []
+            for i in idx:
+                t = " ".join(texts.iloc[int(i)].split())  # collapse whitespace
+                if len(t) > max_chars:
+                    t = t[:max_chars] + "…"
+                if t:
+                    excerpts.append(t)
+            samples[cid] = excerpts
+
+        # Try the LLM; fall back to TF-IDF, then numeric, on any failure.
+        names_by_id: dict[int, str] | None = None
+        try:
+            names_by_id = self._llm_label_clusters(
+                samples, max_words=max_words, api_key=api_key, model=model,
+                provider=provider, max_clusters_per_call=max_clusters_per_call,
+            )
+        except Exception as e:
+            self.naming_error = str(e)
+            logging.warning(f"get_llm_clusters: LLM labeling failed ({e}); "
+                            "falling back to TF-IDF naming.")
+
+        if names_by_id:
+            ordered, used = [], set()
+            for cid in cluster_ids:
+                name = (names_by_id.get(cid) or "").strip()
+                if not name:
+                    name = f"Cluster {cid}"
+                # Cap to max_words, then ensure global uniqueness ("avoid
+                # duplicates") with a numeric suffix that still respects the cap.
+                words = name.split()[:max_words]
+                candidate, n = " ".join(words), 1
+                while candidate.lower() in used:
+                    n += 1
+                    candidate = " ".join(words[:max(1, max_words - 1)] + [f"({n})"])
+                used.add(candidate.lower())
+                ordered.append(candidate)
+            self.cluster_terms = pd.Categorical(ordered)
+            self.naming_method = "llm"
+            logging.info(f"get_llm_clusters: named {len(ordered)} clusters via {model}.")
+            return
+
+        # Fallback 1: TF-IDF keyword naming (no API needed).
+        try:
+            self.get_tf_idf_clusters(top_n=3)
+            self.naming_method = "tfidf_fallback"
+            return
+        except Exception as e:
+            logging.warning(f"get_llm_clusters: TF-IDF fallback failed ({e}); "
+                            "using numeric names.")
+        # Fallback 2: numeric placeholders.
+        self.cluster_terms = pd.Categorical([f"Cluster {cid}" for cid in cluster_ids])
+        self.naming_method = "numeric_fallback"
+
+    def _llm_label_clusters(self, samples, max_words, api_key, model,
+                            provider, max_clusters_per_call):
+        """Map cluster id → short label via one (or a few batched) LLM call(s).
+
+        Every cluster's samples go in a single request; batching only kicks in
+        beyond ``max_clusters_per_call`` clusters, and each later batch is told
+        which labels are already taken so names stay distinct across the whole
+        set. Returns ``{cluster_id: label}`` (only ids the model labelled).
+        """
+        # Resolve provider (auto-detect from the model name when unset):
+        # "openai" | "deepseek" (both via the OpenAI-compatible client) |
+        # "google" (Gemini via google.generativeai), mirroring rag_search.py.
+        if provider is None:
+            if model.startswith("gemini") or model.startswith("models/gemini"):
+                provider = "google"
+            elif model in DEEPSEEK_MODELS:
+                provider = "deepseek"
+            else:
+                provider = "openai"
+        provider = provider.lower()
+
+        # Resolve API key — fall back to the matching config.py key per provider.
+        if api_key is None:
+            try:
+                from config import API_KEY as _OAI_KEY, GEMINI_KEY as _GEM_KEY
+            except Exception:
+                _OAI_KEY = _GEM_KEY = ""
+            api_key = _GEM_KEY if provider == "google" else _OAI_KEY
+        if not api_key:
+            raise RuntimeError(
+                f"No API key available for LLM cluster naming (provider={provider})."
+            )
+
+        sys_prompt = (
+            "You label clusters of UAP (unidentified aerial phenomena) report "
+            "excerpts. For each cluster, write ONE short, specific, human-readable "
+            f"label of AT MOST {max_words} words capturing the theme that "
+            "distinguishes that cluster (shapes, behaviours, locations, witnesses, "
+            "effects, etc.). Do not number the labels and never reuse the same "
+            "label for two clusters. Respond with ONLY a JSON object mapping each "
+            "cluster id (as a string) to its label."
+        )
+
+        # Per-provider client setup.
+        if provider == "google":
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            gem_model = genai.GenerativeModel(
+                model if model.startswith("models/") else f"models/{model}",
+                system_instruction=sys_prompt,
+            )
+        else:
+            # OpenAI and DeepSeek share the OpenAI-compatible client.
+            if provider == "deepseek":
+                client = OpenAI(api_key=api_key, base_url=_DEEPSEEK_BASE)
+            else:
+                client = OpenAI(api_key=api_key)
+            api_model = _PRICING[model][0] if model in _PRICING else model
+
+        cluster_ids = list(samples.keys())
+        result: dict[int, str] = {}
+        used_labels: list[str] = []
+
+        for start in range(0, len(cluster_ids), max_clusters_per_call):
+            batch = cluster_ids[start:start + max_clusters_per_call]
+            lines = []
+            if used_labels:
+                lines.append(
+                    "Labels already assigned to other clusters — do NOT repeat "
+                    "any of these: " + "; ".join(used_labels) + "\n"
+                )
+            for cid in batch:
+                ex = samples[cid]
+                lines.append(f"### Cluster {cid} ({len(ex)} sample reports)")
+                lines.extend(f"- {e}" for e in ex)
+                lines.append("")
+            ids_str = ", ".join(f'"{cid}"' for cid in batch)
+            lines.append(
+                f"Return a JSON object with exactly these keys: {ids_str}. "
+                "Each value is that cluster's label."
+            )
+            user_prompt = "\n".join(lines)
+
+            if provider == "google":
+                resp = gem_model.generate_content(
+                    user_prompt,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.2,
+                    },
+                )
+                content = resp.text
+            else:
+                kwargs = dict(
+                    model=api_model,
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                )
+                if provider == "openai":
+                    kwargs["response_format"] = {"type": "json_object"}
+                resp = client.chat.completions.create(**kwargs)
+                content = resp.choices[0].message.content
+
+            parsed = _extract_json(content) or {}
+            for cid in batch:
+                name = parsed.get(str(cid), parsed.get(cid))
+                if isinstance(name, str) and name.strip():
+                    clean = " ".join(name.strip().split()[:max_words])
+                    result[cid] = clean
+                    used_labels.append(clean)
+        return result
 
     def cluster_levenshtein(self, cluster_terms, cluster_labels, char_diff_threshold=3):
         from Levenshtein import distance  # Make sure to import the correct distance function
@@ -731,11 +1009,19 @@ def train_xgboost(x_train, y_train, x_test, y_test, num_classes):
     dtrain = xgb.DMatrix(x_train, label=y_train, enable_categorical=True)
     dtest = xgb.DMatrix(x_test, label=y_test)
 
+    # Co-tuned with analysis_service._xgb_cv_accuracy (autoresearch sweep): a
+    # shallower, slower, mildly-subsampled model generalises better on these
+    # small, imbalanced categorical targets than the old depth-6/eta-0.3 default
+    # (raised mean 5-fold CV accuracy 0.862 → 0.866) and shrinks the holdout↔CV
+    # overfit gap. Keep these in sync with that function.
     params = {
         'objective': 'multi:softmax',
         'num_class': num_classes,
-        'max_depth': 6,
-        'eta': 0.3,
+        'max_depth': 4,
+        'eta': 0.1,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'min_child_weight': 2,
         'tree_method': 'hist',
         'device': 'cuda' if _GPU_AVAILABLE else 'cpu',
         'nthread': -1,
@@ -743,9 +1029,9 @@ def train_xgboost(x_train, y_train, x_test, y_test, num_classes):
     bst = xgb.train(
         dtrain=dtrain,
         params=params,
-        num_boost_round=100,
+        num_boost_round=400,
         evals=[(dtest, 'eval')],
-        early_stopping_rounds=10,
+        early_stopping_rounds=20,
         verbose_eval=False,
     )
     preds = bst.predict(dtest)
@@ -1193,6 +1479,29 @@ def estimate_cost(
     }
 
 
+class FatalParseError(RuntimeError):
+    """A non-retryable, run-fatal API failure — an unfunded/empty account
+    (``insufficient_quota``), a bad key (401 / ``invalid_api_key``), or a
+    billing/permission block. Retrying these just storms the API with a doomed
+    call for every row (× MAX_RETRIES × max_workers), so the whole parse run
+    aborts on the first one instead."""
+
+
+# Substrings marking a permanent, batch-fatal failure (matched case-insensitively
+# against the exception text). These are NOT transient — retrying can never help.
+_FATAL_API_MARKERS = (
+    "insufficient_quota", "exceeded your current quota", "invalid_api_key",
+    "incorrect api key", "authenticationerror", "invalid authentication",
+    "billing", "account_deactivated", "account deactivated",
+    "access terminated", "permissiondeniederror",
+)
+
+
+def _is_fatal_api_error(err: str) -> bool:
+    low = err.lower()
+    return any(m in low for m in _FATAL_API_MARKERS)
+
+
 class UAPParser:
     """
     Parse raw UAP report texts into structured JSON via OpenAI or DeepSeek.
@@ -1258,6 +1567,9 @@ class UAPParser:
         self.checkpoint_path = checkpoint_path
         self.responses: dict[str, str] = {}
         self._responses_lock = _threading.Lock()
+        # Circuit breaker: set on the first fatal API error (no quota / bad key)
+        # so concurrent workers short-circuit instead of each hammering the API.
+        self._fatal = _threading.Event()
         self.last_errors: list[str] = []   # populated by process_descriptions
 
         if provider == "deepseek":
@@ -1329,6 +1641,10 @@ class UAPParser:
         wait = INITIAL_WAIT
         last_exc = None
         for _ in range(MAX_RETRIES):
+            # Bail immediately if a fatal error already aborted the run — an
+            # unfunded account would otherwise fire one doomed call per row.
+            if self._fatal.is_set():
+                raise FatalParseError("aborted after an earlier fatal API error")
             try:
                 return self.client.chat.completions.create(
                     model=self.model,
@@ -1345,7 +1661,14 @@ class UAPParser:
                     raise
             except Exception as e:
                 err = str(e)
-                if "429" in err or "rate" in err.lower() or "concurren" in err.lower():
+                # Permanent failures (no quota / bad key / billing / permission)
+                # are NOT rate limits — never retry. Trip the breaker so the rest
+                # of the concurrent run aborts instead of hammering the API.
+                if _is_fatal_api_error(err):
+                    self._fatal.set()
+                    raise FatalParseError(err)
+                low = err.lower()
+                if "429" in err or "rate" in low or "concurren" in low:
                     logging.warning(f"Rate limited — waiting {wait}s")
                     time.sleep(wait)
                     wait = min(wait * 2, MAX_WAIT)
@@ -1636,6 +1959,7 @@ class UAPParser:
             return
 
         self.last_errors.clear()
+        self._fatal.clear()   # reset the circuit breaker for this run
         n_ok = n_fail = 0
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1662,6 +1986,17 @@ class UAPParser:
                         msg = f"No response returned for: {str(desc)[:80]!r}"
                         self.last_errors.append(msg)
                         logging.warning(msg)
+                except FatalParseError as exc:
+                    # Unfunded account / bad key / billing — abort the whole run
+                    # instead of firing a doomed call for every remaining row.
+                    n_fail += 1
+                    self.last_errors.append(f"FATAL: {exc}")
+                    logging.error(f"Fatal API error — aborting parse run: {exc}")
+                    for f in future_to_desc:
+                        f.cancel()   # drop not-yet-started rows
+                    if progress_callback is not None:
+                        progress_callback(n_ok, n_fail, len(pending))
+                    break
                 except Exception as exc:
                     n_fail += 1
                     self.last_errors.append(str(exc))

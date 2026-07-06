@@ -204,6 +204,10 @@ export interface ParseRunResponse {
   n_total: number;
   n_failed: number;
   errors: string[];
+  // Set when the run aborted on an unfunded/invalid account (no quota, bad key,
+  // billing) instead of failing row-by-row.
+  fatal?: boolean;
+  fatal_message?: string | null;
   data: DataResponse;
 }
 
@@ -220,6 +224,17 @@ export interface ScuCriteriaResponse {
   presets: Record<string, string[]>;
 }
 
+// Input-column mapping resolved by the normalizer (exact/suffix/leaf/fuzzy/manual)
+// so schemas that nest fields differently (e.g. MasterSCU_v1) still feed the gate.
+export interface ScuColumnMapping {
+  resolved: Record<string, string>;   // canonical -> actual dataframe column
+  methods: Record<string, string>;    // canonical -> how it matched
+  scores: Record<string, number>;     // canonical -> match confidence 0..1
+  unmatched: string[];                // canonical inputs with no source column
+  expected: string[];                 // all canonical inputs the gate reads
+  actual_columns: string[];           // columns present in the raw input
+}
+
 export interface ScuNormalizeResponse {
   status: string;
   metrics: {
@@ -229,6 +244,7 @@ export interface ScuNormalizeResponse {
     has_credible_witness: number;
   };
   audit_markdown: string;
+  mapping?: ScuColumnMapping;
   data: DataResponse;
 }
 
@@ -260,6 +276,10 @@ export interface ColumnGroupsResponse {
   groups: ColumnGroup[];
   bands: Record<string, string[]>;
   nunique: Record<string, number>;
+  // Known exact semantic duplicates (unit twins / anomaly.* re-encodings of
+  // engagement types) excluded from the default selection to avoid diluting
+  // XGBoost gain — still present in `groups` for manual re-selection.
+  semantic_duplicates_removed?: { kept: string; dropped: string[]; reason: string }[];
 }
 
 export interface CramersVResponse {

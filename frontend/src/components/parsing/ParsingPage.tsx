@@ -41,6 +41,7 @@ export function ParsingPage() {
     setDeepseekKey,
     setParsedReady,
     setPage,
+    dataLoaded,
   } = useStore();
 
   const [schemas, setSchemas] = useState<SchemaListResponse | null>(null);
@@ -137,6 +138,14 @@ export function ParsingPage() {
   const addToKeep = (cols: string[]) =>
     setKeepColumns((prev) => Array.from(new Set([...prev, ...cols])));
 
+  // Adopt a parse source (from either an upload or the already-loaded dataset).
+  const applySource = (res: { data: DataResponse; columns: string[] }) => {
+    setSource(res.data);
+    setSourceColumns(res.columns);
+    setTextColumns(res.columns.length ? [res.columns[0]] : []);
+    setKeepColumns([]);
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -145,13 +154,24 @@ export function ParsingPage() {
     setResult(null);
     setEstimate(null);
     try {
-      const res = await api.uploadParseFile(file);
-      setSource(res.data);
-      setSourceColumns(res.columns);
-      setTextColumns(res.columns.length ? [res.columns[0]] : []);
-      setKeepColumns([]);
+      applySource(await api.uploadParseFile(file));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use the dataset already loaded in the Data Explorer — no separate upload.
+  const useLoadedDataset = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setEstimate(null);
+    try {
+      applySource(await api.parseUseLoaded());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not use the loaded dataset');
     } finally {
       setLoading(false);
     }
@@ -212,6 +232,16 @@ export function ParsingPage() {
           Upload Raw Reports (CSV / XLSX / JSON)
           <input type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} className="hidden" />
         </label>
+        {dataLoaded && (
+          <button
+            onClick={useLoadedDataset}
+            title="Skip the upload — parse the dataset already loaded (and filtered) in the Data Explorer"
+            className="flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-accent hover:bg-elevated"
+          >
+            <Database className="h-4 w-4 text-accent" />
+            Use loaded dataset
+          </button>
+        )}
         {source && (
           <div className="ml-auto flex items-center gap-2 text-xs text-text-muted">
             <FileSearch className="h-4 w-4" />
@@ -231,8 +261,10 @@ export function ParsingPage() {
       {!source && !loading && (
         <Panel title="LLM Feature Extraction">
           <p className="text-sm text-text-muted">
-            Upload a dataset of raw UAP report text. Select the column(s) holding the narrative,
-            choose one or more output schemas, then run GPT/DeepSeek extraction into structured JSON.
+            Upload a dataset of raw UAP report text — or{' '}
+            <span className="text-accent">Use loaded dataset</span> to parse the one already loaded in
+            the Data Explorer. Select the column(s) holding the narrative, choose one or more output
+            schemas, then run GPT/DeepSeek extraction into structured JSON.
           </p>
         </Panel>
       )}
@@ -550,19 +582,34 @@ export function ParsingPage() {
 
             {result && (
               <Panel title="Result">
-                <div className="flex items-center gap-2 text-sm text-success">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {result.n_ok} / {result.n_total} parsed
-                </div>
-                {result.n_failed > 0 && (
+                {result.fatal ? (
+                  <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Run aborted — API account / key problem</p>
+                      <p className="mt-0.5 text-[11px] opacity-90">
+                        {result.fatal_message ||
+                          'The key has no quota or billing set up. The run stopped after the first failure instead of retrying every row.'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-success">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {result.n_ok} / {result.n_total} parsed
+                  </div>
+                )}
+                {!result.fatal && result.n_failed > 0 && (
                   <p className="mt-1 text-xs text-warning">{result.n_failed} failed</p>
                 )}
-                <button
-                  onClick={() => setPage('scu')}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-purple/40 bg-purple/10 px-3 py-2 text-xs font-medium text-text-primary hover:bg-purple/20"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5" /> Run SCU Normalization →
-                </button>
+                {result.n_ok > 0 && (
+                  <button
+                    onClick={() => setPage('scu')}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-purple/40 bg-purple/10 px-3 py-2 text-xs font-medium text-text-primary hover:bg-purple/20"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" /> Run SCU Normalization →
+                  </button>
+                )}
               </Panel>
             )}
           </div>

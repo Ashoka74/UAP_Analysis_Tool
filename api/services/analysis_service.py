@@ -80,19 +80,95 @@ def group_by_parent(columns: list[str], sep: str = ".") -> list[dict]:
     return out
 
 
+# ── Known exact semantic duplicates (MasterSCU_v1) ──────────────────────────
+# Field pairs that encode the SAME category twice at different paths — the
+# "definitional overlap" that skews XGBoost gain (importance splits across the
+# twins, and each twin trivially "predicts" the other at V≈1). Per the SCU
+# priority, the engagement_type member is kept and the anomaly.* re-encoding is
+# dropped from the DEFAULT selection (still selectable manually). Unit twins
+# (metric/imperial re-encodings of one measurement) keep the metric member.
+# Both sides are matched by path suffix so this works on MasterSCU-shaped
+# (`engagement.engagement_type.*`) and flat SCU_v2-shaped columns alike.
+SEMANTIC_DUPLICATE_GROUPS: list[dict] = [
+    # definitional twins — keep engagement_type (SCU-filter priority)
+    {"keep": ["engagement_type.radical_flight"], "drop": ["anomaly.flight"],
+     "reason": "anomaly.flight re-encodes engagement_type.radical_flight"},
+    {"keep": ["engagement_type.occupant_observed", "engagement_type.occupant_encounter"],
+     "drop": ["anomaly.occupant"],
+     "reason": "anomaly.occupant re-encodes the occupant engagement types"},
+    {"keep": ["engagement_type.electronic_transmissions"], "drop": ["anomaly.signal"],
+     "reason": "anomaly.signal re-encodes engagement_type.electronic_transmissions"},
+    # keep assessment.contradictsUap — it is the SCU gate input
+    {"keep": ["assessment.contradictsUap"], "drop": ["anomaly.validated"],
+     "reason": "anomaly.validated is the inverse re-encoding of assessment.contradictsUap"},
+    {"keep": ["witness.count"], "drop": ["witness.countFreeform"],
+     "reason": "free-text re-encoding of witness.count"},
+    # unit twins — deterministic conversions of one measurement (keep metric)
+    {"keep": ["object.size_meters"], "drop": ["object.size_feet"], "reason": "unit twin (m/ft)"},
+    {"keep": ["object.altitude_meters"], "drop": ["object.altitude_feet"], "reason": "unit twin (m/ft)"},
+    {"keep": ["witness.distance_from_uap_meters"], "drop": ["witness.distance_from_uap_feet"],
+     "reason": "unit twin (m/ft)"},
+    {"keep": ["witness.distance_from_nhi_meters"], "drop": ["witness.distance_from_nhi_feet"],
+     "reason": "unit twin (m/ft)"},
+    {"keep": ["behavior.distance_covered_km"], "drop": ["behavior.distance_covered_mi"],
+     "reason": "unit twin (km/mi)"},
+    {"keep": ["location.associated_facility_distance_km"],
+     "drop": ["location.associated_facility_distance_mi"], "reason": "unit twin (km/mi)"},
+    {"keep": ["performance.speed_kmh"], "drop": ["performance.speed_mph"],
+     "reason": "unit twin (km/h / mph)"},
+    {"keep": ["entities.height_meters"], "drop": ["entities.Height"],
+     "reason": "unit twin (metric / freeform height)"},
+    {"keep": ["date_time.duration_min"], "drop": ["date_time.duration"],
+     "reason": "freeform re-encoding of duration_min"},
+]
+
+
+def _suffix_find(columns: list[str], path: str) -> str | None:
+    """First column equal to ``path`` or ending in ``.path`` (case-insensitive)."""
+    pl = path.lower()
+    for c in columns:
+        cl = str(c).lower()
+        if cl == pl or cl.endswith("." + pl):
+            return c
+    return None
+
+
+def dedupe_semantic(columns: list[str]) -> tuple[list[str], list[dict]]:
+    """Drop the shadowed member of each known duplicate group from ``columns``
+    (only when a kept member is present too). Returns (kept_columns, removed)
+    where removed = [{kept, dropped, reason}] for UI transparency."""
+    out = list(columns)
+    removed: list[dict] = []
+    for g in SEMANTIC_DUPLICATE_GROUPS:
+        kept = next((c for k in g["keep"] if (c := _suffix_find(out, k))), None)
+        if kept is None:
+            continue   # canonical member absent — nothing shadows the twin
+        dropped = [c for d in g["drop"] if (c := _suffix_find(out, d))]
+        if dropped:
+            out = [c for c in out if c not in dropped]
+            removed.append({"kept": kept, "dropped": dropped, "reason": g["reason"]})
+    return out, removed
+
+
 def column_groups(df: pd.DataFrame, *, high_threshold: int = 30) -> dict:
     """Eligible categorical columns for the explorer, grouped by dotted parent.
 
     Cheap (only cardinality counting) so the frontend can render the parent-group
-    selector before computing the full Cramér's V matrix.
+    selector before computing the full Cramér's V matrix. The DEFAULT selection
+    (``eligible``) excludes known exact semantic duplicates (unit twins and
+    anomaly.* re-encodings of engagement types) so baseline XGBoost gain isn't
+    diluted across definitional twins; the dropped columns stay in ``groups``
+    and can be re-selected manually.
     """
     bands, nunique_map = band_columns(df, high_threshold=high_threshold)
-    eligible = _eligible_categorical(bands)
+    eligible_all = _eligible_categorical(bands)
+    eligible, removed = dedupe_semantic(eligible_all)
     return {
         "eligible": eligible,
-        "groups": group_by_parent(eligible),
+        "groups": group_by_parent(eligible_all),
         "bands": bands,
         "nunique": nunique_map,
+        "semantic_duplicates_removed": removed,
     }
 
 

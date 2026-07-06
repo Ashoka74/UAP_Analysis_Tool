@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -6,6 +6,8 @@ import {
   Filter,
   FileText,
   Upload,
+  GitCompare,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useStore } from '../../store/useStore';
@@ -17,7 +19,21 @@ import type {
   ScuCriteriaResponse,
   ScuNormalizeResponse,
   ScuFilterResponse,
+  ScuColumnMapping,
 } from '../../types';
+
+// Badge styling per match method — exact matches are quiet, heuristic ones
+// (suffix/leaf/fuzzy) stand out for review, manual overrides are accented.
+const METHOD_STYLE: Record<string, string> = {
+  exact: 'bg-raised text-text-muted border-border',
+  manual: 'bg-accent-dim/30 text-accent-bright border-accent',
+  suffix: 'bg-success/10 text-success border-success/40',
+  leaf: 'bg-warning/10 text-warning border-warning/40',
+  fuzzy: 'bg-purple/10 text-purple border-purple/40',
+  unmatched: 'bg-danger/10 text-danger border-danger/40',
+};
+const methodStyle = (m: string) =>
+  METHOD_STYLE[m.split('/')[0].replace('?', '')] ?? METHOD_STYLE.fuzzy;
 
 export function ScuPage() {
   const { parsedReady, setPage } = useStore();
@@ -31,6 +47,23 @@ export function ScuPage() {
   const [loading, setLoading] = useState(false);
   const [filterLoading, setFilterLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Manual column-map overrides ({canonical: actual}) applied on top of the
+  // automatic mapping via /api/scu/remap.
+  const [remapLoading, setRemapLoading] = useState(false);
+  const applyRemap = async (columnMap: Record<string, string>) => {
+    setRemapLoading(true);
+    setError(null);
+    setFiltered(null);
+    try {
+      const res = await api.scuRemap(columnMap);
+      setNorm(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Re-normalization failed');
+    } finally {
+      setRemapLoading(false);
+    }
+  };
 
   useEffect(() => {
     api.getScuCriteria().then(setCriteria).catch(() => {});
@@ -164,6 +197,15 @@ export function ScuPage() {
             <MetricCard label="Credible witness" value={norm.metrics.has_credible_witness} icon={FileText} />
           </div>
 
+          {/* Input-column mapping — review the auto-match, override manually */}
+          {norm.mapping && (
+            <ColumnMappingPanel
+              mapping={norm.mapping}
+              busy={remapLoading}
+              onApply={applyRemap}
+            />
+          )}
+
           {/* Eligibility filter */}
           <Panel title="SCU Eligibility Filter" actions={<Filter className="h-4 w-4 text-text-muted" />}>
             {criteria && (
@@ -282,5 +324,145 @@ function MetricCard({
         {value.toLocaleString()}
       </p>
     </div>
+  );
+}
+
+// Review / override how raw input columns were mapped onto the canonical fields
+// the SCU gate reads. Heuristic matches (suffix/leaf/fuzzy) and unmatched fields
+// are shown by default; exact matches are behind a toggle. Overrides re-run the
+// normalizer via /api/scu/remap.
+function ColumnMappingPanel({
+  mapping,
+  busy,
+  onApply,
+}: {
+  mapping: ScuColumnMapping;
+  busy: boolean;
+  onApply: (columnMap: Record<string, string>) => void;
+}) {
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [showExact, setShowExact] = useState(false);
+
+  // Reset pending overrides whenever a new mapping arrives (post-remap).
+  useEffect(() => setOverrides({}), [mapping]);
+
+  const rows = useMemo(() => {
+    const method = (c: string) =>
+      mapping.unmatched.includes(c) ? 'unmatched' : mapping.methods[c] ?? 'unmatched';
+    return mapping.expected
+      .map((c) => ({
+        canonical: c,
+        actual: mapping.resolved[c] ?? '',
+        method: method(c),
+        score: mapping.scores[c],
+      }))
+      .filter((r) => showExact || r.method !== 'exact')
+      .sort((a, b) => {
+        // unmatched first, then heuristic, then manual/exact
+        const rank = (m: string) => (m === 'unmatched' ? 0 : m === 'exact' ? 2 : 1);
+        return rank(a.method) - rank(b.method) || a.canonical.localeCompare(b.canonical);
+      });
+  }, [mapping, showExact]);
+
+  const nHeuristic = mapping.expected.filter((c) => {
+    const m = mapping.methods[c];
+    return m && m !== 'exact' && m !== 'manual';
+  }).length;
+  const dirty = Object.keys(overrides).length > 0;
+
+  return (
+    <Panel
+      title="Input Column Mapping"
+      subtitle="How your dataset's columns were matched to the fields the SCU gate reads — override any wrong match"
+      actions={
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[11px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={showExact}
+              onChange={(e) => setShowExact(e.target.checked)}
+              className="accent-accent"
+            />
+            Show exact matches
+          </label>
+          <button
+            onClick={() => onApply(overrides)}
+            disabled={busy || !dirty}
+            title={dirty ? 'Re-run normalization with your manual mapping' : 'Change a mapping below first'}
+            className="flex items-center gap-1.5 rounded-md bg-accent-dim px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`} />
+            {busy ? 'Re-normalizing…' : `Apply mapping${dirty ? ` (${Object.keys(overrides).length})` : ''}`}
+          </button>
+        </div>
+      }
+    >
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] text-text-muted">
+        <GitCompare className="h-3.5 w-3.5" />
+        {mapping.unmatched.length} unmatched · {nHeuristic} heuristic match(es) (suffix / leaf-name /
+        fuzzy) — review these; exact matches are hidden by default.
+      </p>
+      <div className="max-h-80 overflow-auto rounded border border-border/40">
+        <table className="w-full border-collapse text-[11px]">
+          <thead className="sticky top-0 bg-deep">
+            <tr className="text-left text-text-muted">
+              <th className="px-3 py-2">Expected field (gate input)</th>
+              <th className="px-3 py-2">Mapped from</th>
+              <th className="px-3 py-2">Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const pending = overrides[r.canonical];
+              const shown = pending ?? r.actual;
+              return (
+                <tr key={r.canonical} className="border-t border-border/30">
+                  <td className="px-3 py-1.5 font-mono text-text-secondary">{r.canonical}</td>
+                  <td className="px-3 py-1.5">
+                    <select
+                      value={shown}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setOverrides((p) => {
+                          const next = { ...p };
+                          if (!v || v === r.actual) delete next[r.canonical];
+                          else next[r.canonical] = v;
+                          return next;
+                        });
+                      }}
+                      className={`w-full max-w-xs rounded border bg-deep px-2 py-1 text-[11px] focus:border-accent focus:outline-none ${
+                        pending ? 'border-accent text-accent-bright' : 'border-border text-text-primary'
+                      }`}
+                    >
+                      <option value="">— not mapped —</option>
+                      {mapping.actual_columns.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <span
+                      className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                        pending ? methodStyle('manual') : methodStyle(r.method)
+                      }`}
+                      title={r.score != null ? `confidence ${r.score}` : undefined}
+                    >
+                      {pending ? 'manual (pending)' : r.method}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-3 py-3 text-center text-text-muted">
+                  Every gate input matched its column exactly — nothing to review.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }

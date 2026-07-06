@@ -63,6 +63,9 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
   // Eligible categorical columns, grouped by their dotted parent (e.g. craft.*).
   const [groups, setGroups] = useState<ColumnGroup[]>([]);
   const [groupsError, setGroupsError] = useState<string | null>(null);
+  // Exact semantic duplicates deselected by default (unit twins, anomaly.*
+  // re-encodings of engagement types) — shown as a note for transparency.
+  const [dedup, setDedup] = useState<{ kept: string; dropped: string[]; reason: string }[]>([]);
 
   // Selection is a Set in the UI but persisted as an array in the store.
   const selected = useMemo(() => new Set(cramersSelected ?? []), [cramersSelected]);
@@ -79,6 +82,7 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
       .then((res) => {
         if (cancelled) return;
         setGroups(res.groups);
+        setDedup(res.semantic_duplicates_removed ?? []);
         if (useStore.getState().cramersSelected === null) {
           setCramersSelected(res.eligible);
         }
@@ -441,6 +445,19 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
         {!groupsError && orderedEligible.length === 0 && (
           <p className="text-xs text-text-muted">
             No categorical-eligible columns found for this source (binary/low/medium cardinality).
+          </p>
+        )}
+
+        {dedup.length > 0 && (
+          <p
+            className="mb-2 text-[11px] text-text-muted"
+            title={dedup
+              .map((d) => `${d.dropped.join(', ')} — ${d.reason} (kept ${d.kept})`)
+              .join('\n')}
+          >
+            ⚖️ {dedup.reduce((n, d) => n + d.dropped.length, 0)} exact semantic duplicate(s)
+            deselected by default ({dedup.map((d) => d.dropped.map((c) => c.split('.').pop()).join(', ')).join(', ')})
+            — twins of kept fields; re-select manually if needed.
           </p>
         )}
 

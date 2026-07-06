@@ -4,8 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from uap_analyzer import (UAPParser, UAPAnalyzer, UAPVisualizer,
-                          OPENAI_MODELS, DEEPSEEK_MODELS, estimate_cost, _extract_json,
-                          get_embed_model)
+                          OPENAI_MODELS, DEEPSEEK_MODELS, estimate_cost, _extract_json)
 # import ChartGen
 # from ChartGen import ChartGPT
 from Levenshtein import distance
@@ -26,6 +25,31 @@ import os
 import json
 from utils.data_processing import DataProcessor
 import plotly.graph_objects as go
+
+
+def read_uploaded_sheet(uploaded, *, key, **read_kwargs):
+    """Read an uploaded tabular file into a DataFrame.
+
+    For multi-sheet .xlsx/.xls/.xlsm workbooks, render a selectbox so the user
+    picks which sheet to load. Single-sheet workbooks and CSVs load directly
+    (a CSV has no sheets). Returns a DataFrame, or None if nothing is uploaded.
+    Exceptions propagate to the caller's existing try/except.
+    """
+    if uploaded is None:
+        return None
+    name = (getattr(uploaded, "name", "") or "").lower()
+    if name.endswith((".xlsx", ".xls", ".xlsm")):
+        xls = pd.ExcelFile(uploaded)
+        sheets = list(xls.sheet_names)
+        sheet = sheets[0]
+        if len(sheets) > 1:
+            sheet = st.selectbox(
+                f"📑 {len(sheets)} sheets in “{getattr(uploaded, 'name', 'workbook')}” "
+                "— select the sheet to load",
+                sheets, key=key,
+            )
+        return pd.read_excel(xls, sheet_name=sheet, **read_kwargs)
+    return pd.read_csv(uploaded, **read_kwargs)
 
 # st.set_option('deprecation.showPyplotGlobalUse', False)
 
@@ -432,13 +456,161 @@ def convert_cached_data_to_df(parsed_responses):
         st.error(f"Error converting responses to DataFrame: {e}")
 
 
-def render_scu_normalization(parsed_responses):
+def _extract_year_series(series):
+    """Best-effort 4-digit year (float; NaN when unknown) from a column that may
+    hold datetimes, numeric years, or free-text dates. Lets a separate /
+    carried-through date column drive the SCU window when the parsed
+    ``date_time.year`` is missing (e.g. parsing ran on the description only)."""
+    import re
+    s = series
+    # 1. Native datetime.
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s.dt.year.astype("float")
+    # 2. Numeric values that already look like calendar years (1976, 1980.0).
+    num = pd.to_numeric(s, errors="coerce")
+    yr_like = num.where((num >= 1000) & (num <= 2100))
+    if yr_like.notna().mean() > 0.3:
+        return yr_like.astype("float")
+    # 3. Parseable date strings / date objects.
+    dt = pd.to_datetime(s, errors="coerce")
+    if dt.notna().mean() > 0.3:
+        return dt.dt.year.astype("float")
+    # 4. Regex 4-digit-year fallback (handles "c. 1980", "May 1976", …).
+    rx = re.compile(r"(1[89]\d{2}|20\d{2})")
+    def _yr(v):
+        m = rx.search(str(v))
+        return float(m.group(1)) if m else np.nan
+    return s.map(_yr)
+
+
+def _date_parts(series):
+    """Return (year, month, day) float Series from `series`, mirroring map.py's
+    robust date handling (auto_create_date_column / detect_and_combine_date_columns).
+
+    A bare calendar-year column yields NaN month/day, so a year-only date is
+    correctly treated as an *incomplete* core date by SCU Criterion 2 (which
+    requires a full year+month+day)."""
+    s = series
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return (s.dt.year.astype("float"), s.dt.month.astype("float"),
+                s.dt.day.astype("float"))
+    # Bare numeric calendar years (1976, 1980.0): year known, month/day unknown.
+    num = pd.to_numeric(s, errors="coerce")
+    yr_like = num.where((num >= 1000) & (num <= 2100))
+    if yr_like.notna().mean() > 0.3:
+        nan = pd.Series(np.nan, index=s.index)
+        return yr_like.astype("float"), nan, nan
+    # Full date strings / objects → parse and split into components.
+    dt = pd.to_datetime(s, errors="coerce")
+    return (dt.dt.year.astype("float"), dt.dt.month.astype("float"),
+            dt.dt.day.astype("float"))
+
+
+# Parsed-schema field prefixes — a carried-through *source* date column has a
+# plain name, so it sorts ahead of these and lands first in the picker.
+_SCU_SCHEMA_PREFIXES = ("date_time.", "source.", "sightingDetails.",
+                        "investigation.", "manifest.", "location.", "craft.")
+
+def _candidate_date_columns(df):
+    """Column names in `df` that look like dates (by dtype, name, or a parse
+    test), ordered so non-schema (carried-through source) columns come first."""
+    import re
+    name_rx = re.compile(r"date|year|\btime\b|\byr\b|\bdt\b", re.I)
+    cands = []
+    for c in df.columns:
+        s = df[c]
+        if pd.api.types.is_datetime64_any_dtype(s) or name_rx.search(str(c)):
+            cands.append(c)
+            continue
+        sample = s.dropna().head(50)
+        if len(sample) and _extract_year_series(sample).notna().mean() > 0.6:
+            cands.append(c)
+    cands.sort(key=lambda c: (str(c).startswith(_SCU_SCHEMA_PREFIXES), str(c)))
+    return cands
+
+
+def _render_scu_column_mapping_editor(audit, raw_df):
+    """Review / override how input columns were auto-mapped (exact → suffix →
+    leaf-name → fuzzy) onto the canonical fields the SCU gate reads.
+
+    Schemas that nest fields differently (e.g. MasterSCU_v1's ``object.*`` /
+    ``engagement.engagement_type.*`` / ``behavior.performance.*``) resolve
+    automatically; wrong or missing matches can be corrected per-field here.
+    Overrides live in ``st.session_state['scu_column_map']`` ({canonical:
+    actual}); submitting the form reruns the normalizer with them applied.
+    """
+    mapping = audit.get("column_mapping") or {}
+    methods = audit.get("column_mapping_methods") or {}
+    unmatched = audit.get("column_mapping_unmatched") or []
+    expected = audit.get("expected_input_columns") or []
+    if not expected:
+        return   # mapping disabled / nothing to show
+
+    manual = st.session_state.get("scu_column_map") or {}
+    n_heur = sum(1 for m in methods.values() if m not in ("exact", "manual"))
+    label = (
+        f"🔀 Input column mapping — {len(unmatched)} unmatched · "
+        f"{n_heur} heuristic match(es)" + (f" · {len(manual)} manual" if manual else "")
+    )
+    with st.expander(label, expanded=False):
+        st.caption(
+            "Fields the SCU gate reads, and which dataset column feeds each one. "
+            "`suffix` / `leaf` / `fuzzy` matches were resolved automatically — "
+            "review them and override any wrong match. Exact matches are hidden "
+            "unless toggled."
+        )
+        show_exact = st.toggle("Show exact matches", value=False, key="scu_map_show_exact")
+        rows = [
+            c for c in expected
+            if show_exact or methods.get(c) != "exact" or c in manual
+        ]
+        # unmatched first, then heuristic, then the rest
+        rows.sort(key=lambda c: (0 if c in unmatched else 1 if methods.get(c) not in ("exact", "manual") else 2, c))
+        if not rows:
+            st.info("Every gate input matched its column exactly — nothing to review.")
+            return
+
+        options = ["(auto)"] + list(raw_df.columns)
+        with st.form("scu_column_map_form", border=False):
+            new_map: dict[str, str] = {}
+            for canon in rows:
+                auto_actual = mapping.get(canon)
+                method = "manual" if canon in manual else methods.get(canon, "unmatched")
+                cur = manual.get(canon)
+                idx = options.index(cur) if cur in options else 0
+                c1, c2 = st.columns([2, 3])
+                c1.markdown(
+                    f"<div style='padding-top:0.4rem'><code>{canon}</code><br/>"
+                    f"<small>{'⚠️ unmatched' if canon in unmatched else f'{method} ← <code>{auto_actual}</code>'}</small></div>",
+                    unsafe_allow_html=True,
+                )
+                pick = c2.selectbox(
+                    canon, options, index=idx, key=f"scu_map_{canon}",
+                    label_visibility="collapsed",
+                )
+                if pick != "(auto)":
+                    new_map[canon] = pick
+            if st.form_submit_button("Apply mapping & re-normalize"):
+                st.session_state["scu_column_map"] = new_map
+                st.rerun()
+        if manual:
+            if st.button("Reset manual mapping", key="scu_map_reset"):
+                st.session_state["scu_column_map"] = {}
+                st.rerun()
+
+
+def render_scu_normalization(parsed_responses, show_advanced_filters=False):
     """Run the SCU v2 normalizer on parsed responses; show audit + downloads.
 
     Builds a DataFrame straight from the raw parsed-response dicts (so real
     NaNs and list-valued fields are preserved), runs scu_normalizer.normalize(),
     then surfaces the SCU five-criterion eligibility funnel and download buttons.
     Toggled on/off via the global "Apply SCU normalization" switch in app.py.
+
+    When ``show_advanced_filters`` is True (set for restored sessions, which
+    never pass through the raw-upload filter_dataframe call), the categorical
+    distribution treemaps and the numeric/date/text filters are rendered on the
+    normalized data, directly below the audit report.
     """
     if not isinstance(parsed_responses, dict) or not parsed_responses:
         st.info("No parsed data to normalize yet.")
@@ -450,14 +622,25 @@ def render_scu_normalization(parsed_responses):
         return
     try:
         raw_df = pd.json_normalize(list(parsed_responses.values()))
+        # Re-attach carried-through source columns (e.g. a separate date column
+        # kept when parsing ran on the description), aligning on the parsed-dict
+        # keys (the LLM input text) so they can drive the SCU window filter below.
+        _keys = list(parsed_responses.keys())
+        if len(raw_df) == len(_keys):
+            raw_df.index = pd.Index(_keys)
+            raw_df = attach_kept_columns(raw_df).reset_index(drop=True)
     except Exception as e:
         st.error(f"Could not build a DataFrame from parsed responses: {e}")
         return
     if raw_df.empty:
         st.warning("Parsed responses produced an empty DataFrame.")
         return
+    # Manual column-map overrides ({canonical: actual}) from the mapping editor
+    # below — applied on top of the automatic exact/suffix/leaf/fuzzy matching.
+    _manual_map = st.session_state.get("scu_column_map") or {}
+    _manual_map = {k: v for k, v in _manual_map.items() if v in raw_df.columns}
     try:
-        norm_df, audit = scu_normalizer.normalize(raw_df)
+        norm_df, audit = scu_normalizer.normalize(raw_df, column_map=_manual_map or None)
     except Exception as e:
         st.error(f"Normalization failed: {e}")
         return
@@ -468,15 +651,109 @@ def render_scu_normalization(parsed_responses):
     c3.metric("In 1945-1975 window", f"{audit.get('in_scu_window_count', 0):,}")
     c4.metric("Credible witness", f"{audit.get('has_credible_witness_count', 0):,}")
 
+    _render_scu_column_mapping_editor(audit, raw_df)
+
     audit_md = scu_normalizer.audit_to_markdown(audit)
     with st.expander("Normalization audit report", expanded=False):
         st.markdown(audit_md)
 
-    _disp = norm_df.copy()
+    # ── Window date column ───────────────────────────────────────────────────
+    # The post-1975 window is normally derived from the parsed `date_time.year`.
+    # When parsing ran on the description and the real date lives in a separate
+    # (carried-through) column, that field is null and the window drops every
+    # row. Let the user pick the actual date column and a start year (default
+    # 1976) — this recomputes `post_1975_window` used by the presets/funnel below.
+    with st.expander("📅 Window date column & start year", expanded=False):
+        st.caption(
+            "By default the SCU post-1975 window uses the parsed `date_time.year`. "
+            "If the real date is in a separate column (e.g. parsing ran on the "
+            "description and the date was carried through), pick that column here. "
+            "Rows with no parseable year are excluded from the window."
+        )
+        _DEFAULT_SRC = "Parsed date_time.year"
+        _cands = [c for c in _candidate_date_columns(norm_df) if c != "date_time.year"]
+        _src = st.selectbox(
+            "Date column for the window", [_DEFAULT_SRC] + _cands,
+            key="scu_window_date_col",
+            help="Carried-through source columns are listed first; parsed schema "
+                 "date fields follow.",
+        )
+        _win_start = int(st.number_input(
+            "Window start year (inclusive)", min_value=1800, max_value=2100,
+            value=1976, step=1, key="scu_window_start_year",
+        ))
+        if _src == _DEFAULT_SRC:
+            _src_col = (norm_df["date_time.year"] if "date_time.year" in norm_df.columns
+                        else pd.Series([np.nan] * len(norm_df), index=norm_df.index))
+            _yr = pd.to_numeric(_src_col, errors="coerce")
+            _src_label = "date_time.year"
+        else:
+            _yr = _extract_year_series(norm_df[_src])
+            _src_label = _src
+        norm_df["post_1975_window"] = (_yr >= _win_start).fillna(False)
+        st.session_state["scu_window_label"] = f"Window: {_src_label} ≥ {_win_start}"
+        _n_pass = int(norm_df["post_1975_window"].sum())
+        _n_bad = int(_yr.isna().sum())
+        st.success(
+            f"Window = **{_src_label} ≥ {_win_start}** → {_n_pass:,} of "
+            f"{len(norm_df):,} rows in window"
+            + (f"; {_n_bad:,} row(s) have no parseable year (excluded)." if _n_bad else ".")
+        )
+
+        # Criterion 2 (has_core_fields) normally needs date_time.year/month/day +
+        # country. When the date comes from a separate column those are null, so
+        # derive the date part from the selected column too (map.py-style parse).
+        if _src != _DEFAULT_SRC:
+            _use_for_core = st.checkbox(
+                "Also derive Criterion 2 (core fields) date from this column",
+                value=True, key="scu_window_core_fields",
+                help="has_core_fields requires a full date (year + month + day) "
+                     "plus country. This swaps the date part to the selected "
+                     "column; a year-only column leaves month/day missing.",
+            )
+            if _use_for_core:
+                _y, _m, _d = _date_parts(norm_df[_src])
+                _country = (norm_df["location_country_iso"].notna()
+                            if "location_country_iso" in norm_df.columns
+                            else pd.Series(False, index=norm_df.index))
+                norm_df["has_core_fields"] = (
+                    _y.notna() & _m.notna() & _d.notna() & _country
+                )
+                _n_core = int(norm_df["has_core_fields"].sum())
+                _yr_no_md = int((_y.notna() & ~(_m.notna() & _d.notna())).sum())
+                st.success(
+                    f"Core fields (Criterion 2) now use **{_src}** for the date → "
+                    f"{_n_core:,} of {len(norm_df):,} rows have full date + country."
+                    + (f" {_yr_no_md:,} row(s) have a year but no month/day "
+                       "(incomplete)." if _yr_no_md else "")
+                )
+
+    # Restored data never passes through the raw-upload Advanced Filters block
+    # (filter_dataframe() at the top of the parse flow), so the categorical
+    # distribution treemaps — and the numeric/date/text filters alongside them —
+    # are otherwise unavailable for a restored session. Surface them here, on the
+    # normalized data, directly below the audit report.
+    # The Advanced Filters return value flows into the table, download, and the
+    # SCU Eligibility Filter below, so narrowing the data here updates everything
+    # downstream. Without a filter applied this is just norm_df unchanged.
+    norm_df_view = norm_df
+    if show_advanced_filters:
+        st.markdown("#### 🔬 Advanced Filters")
+        st.caption(
+            "Explore the normalized data — select categorical columns to see "
+            "their distribution treemaps, plus numeric / date / text filters. "
+            "Selections here narrow the table, download, and SCU Eligibility "
+            "Filter below."
+        )
+        norm_df_view = filter_dataframe(norm_df)
+
+    _disp = norm_df_view.copy()
     for _c in _disp.columns:
         if _disp[_c].dtype == 'object':
             _disp[_c] = _disp[_c].astype(str)
     st.dataframe(_disp)
+    # Canonical normalizer output stays the full frame; the filtered view drives
+    # only the display, download, and SCU filter.
     st.session_state['scu_normalized_df'] = norm_df
 
     col_a, col_b = st.columns(2)
@@ -496,7 +773,7 @@ def render_scu_normalization(parsed_responses):
     )
 
     st.divider()
-    render_scu_filter(norm_df)
+    render_scu_filter(norm_df_view)
 
 
 def render_scu_filter(norm_df):
@@ -515,6 +792,11 @@ def render_scu_filter(norm_df):
     extra_criteria = scu_normalizer.SCU_EXTRA_CRITERIA
     all_keys = [k for k, _c, _l in criteria]
     label_map = {k: lbl for k, _c, lbl in (criteria + extra_criteria)}
+    # Reflect the user's chosen window date column / start year (set in the
+    # normalization section above) in the criterion label.
+    _win_lbl = st.session_state.get("scu_window_label")
+    if _win_lbl:
+        label_map["post_1975_window"] = _win_lbl
 
     # The post-1975 gate swaps in_scu_window for the post-1975 companion window.
     post_1975_keys = ["post_1975_window"] + [k for k in all_keys if k != "in_scu_window"]
@@ -991,6 +1273,7 @@ def filter_dataframe_legacy(df: pd.DataFrame) -> pd.DataFrame:
 
 
 from config import (
+    FORMAT_MASTER_SCU_V1,
     FORMAT_LONG, FORMAT_LONG_XLSX, FORMAT_SCU_V1, FORMAT_SCU_V2, FORMAT_SCU_V3, FORMAT_MERGED, FORMAT_UFOSETI_RU,
     FORMAT_NUFORC, FORMAT_BLUE_BOOK, FORMAT_UK_NATIONAL_ARCHIVES,
     FORMAT_COBEPS_NOTIFICATIONS_PAN, FORMAT_COBEPS_COB_2021,
@@ -1010,6 +1293,7 @@ DEEPSEEK_KEY = st.secrets.get("DEEPSEEK_KEY", "")
 # Both the format selector and the schema↔dataset comparison read from here so
 # the two never drift apart.
 SCHEMA_FORMATS = {
+    "MasterSCU_v1":                    FORMAT_MASTER_SCU_V1,
     "SCU_v1":                          FORMAT_SCU_V1,
     "Default UAP Format":              FORMAT_LONG,
     "SCU Spreadsheet":                 FORMAT_LONG_XLSX,
@@ -1040,7 +1324,7 @@ SCHEMA_FORMATS = {
 # the schema picker presents them grouped so the right standard is easy to find.
 SCHEMA_FORMAT_GROUPS = {
     "Canonical & SCU": [
-        "SCU_v1", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
+        "MasterSCU_v1", "SCU_v1", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
     ],
     "Government & official archives": [
         "Blue Book (USAF)", "UK National Archives",
@@ -1066,8 +1350,16 @@ SCHEMA_FORMAT_GROUPS = {
 # Short provenance blurb per schema (drawn from the config.py header comments)
 # so the picker explains where each dataset/standard comes from at a glance.
 SCHEMA_FORMAT_ORIGINS = {
+    "MasterSCU_v1":
+        "The default extraction schema — the full canonical SCU master schema "
+        "(uap_master_schema.json). The most complete field set in the app: "
+        "record/study provenance, source, date_time, location, witness, "
+        "detection, object, behavior (+performance), anomaly, engagement "
+        "(types/flags), military, effects, entities (+morphology/tools), "
+        "contact, environment, evidence, classification, assessment, scenarios "
+        "(ICD-203 intention scoring), investigation, narrative and context.",
     "SCU_v1":
-        "The default extraction schema — the full SCU_v3 field set minus the "
+        "A compact SCU schema — the full SCU_v3 field set minus the "
         "verbose `sightingDetails` narrative block and the all-null `manifest` "
         "join placeholders. Keeps source, assessment, anomaly, location, "
         "witness, craft, performance, military, effects and engagement fields.",
@@ -1452,10 +1744,7 @@ if parsed_table_restore is not None:
     try:
         import ast as _ast
 
-        if parsed_table_restore.name.lower().endswith(".xlsx"):
-            _flat_df = pd.read_excel(parsed_table_restore)
-        else:
-            _flat_df = pd.read_csv(parsed_table_restore)
+        _flat_df = read_uploaded_sheet(parsed_table_restore, key="restore_sheet")
         # Strip the unnamed index column pandas writes by default on to_csv()
         _flat_df = _flat_df.loc[
             :, ~_flat_df.columns.astype(str).str.match(r"^Unnamed: \d+$")
@@ -1760,9 +2049,7 @@ st.divider()
 if unparsed is not None:
     filtered_data = None
     try:
-        if unparsed.type == "text/csv":
-            data = pd.read_csv(unparsed)
-        elif unparsed.type == "application/json" or unparsed.name.endswith(".json"):
+        if unparsed.type == "application/json" or unparsed.name.endswith(".json"):
             raw = unparsed.read().decode("utf-8").strip()
             # Support both JSONL (one object per line) and a single JSON array/object
             try:
@@ -1839,7 +2126,7 @@ if unparsed is not None:
                         f"({', '.join(nested_df.columns.tolist()[:6])}{'…' if len(nested_df.columns) > 6 else ''})"
                     )
         else:
-            data = pd.read_excel(unparsed)
+            data = read_uploaded_sheet(unparsed, key="unparsed_sheet")
         filtered_data = filter_dataframe(data)
         st.dataframe(filtered_data)
     except Exception as e:
@@ -2448,100 +2735,6 @@ if unparsed is not None:
 # st.write("Parsing descriptions...")
 # st.update_status("Parsing descriptions...")
 
-# ── Embed Column & Save HDF5 ───────────────────────────────────────────────
-st.divider()
-with st.expander("🧬 Compute Embeddings → HDF5", expanded=False):
-    st.markdown(
-        "Batch-encode a text column with `microsoft/harrier-oss-v1-0.6b` "
-        "and download the full DataFrame (with an added `embeddings` column) as an `.h5` file."
-    )
-
-    _embed_src_opts = []
-    if st.session_state.get("parsed_responses_df") is not None:
-        _embed_src_opts.append("Parsed responses DataFrame (current session)")
-    _embed_src_opts.append("Upload CSV / HDF5")
-
-    _embed_src = st.radio("Data source", _embed_src_opts, horizontal=True, key="embed_src")
-
-    _embed_df = None
-    if _embed_src == "Parsed responses DataFrame (current session)":
-        _embed_df = st.session_state["parsed_responses_df"]
-    else:
-        _embed_upload = st.file_uploader(
-            "Upload CSV or HDF5 (.h5)", type=["csv", "h5"], key="embed_upload"
-        )
-        if _embed_upload is not None:
-            if _embed_upload.name.endswith(".h5"):
-                _embed_h5_key_in = st.text_input("HDF5 key to read", value="df", key="embed_h5_key_in")
-                import tempfile as _tmp_in_mod
-                with _tmp_in_mod.NamedTemporaryFile(suffix=".h5", delete=False) as _tmp_in:
-                    _tmp_in.write(_embed_upload.read())
-                    _embed_tmp_path = _tmp_in.name
-                try:
-                    _embed_df = pd.read_hdf(_embed_tmp_path, key=_embed_h5_key_in)
-                except Exception as _e:
-                    st.error(f"Could not read HDF5: {_e}")
-            else:
-                _embed_df = pd.read_csv(_embed_upload)
-
-    if _embed_df is not None:
-        st.caption(f"{len(_embed_df):,} rows × {len(_embed_df.columns)} columns")
-        col_e1, col_e2 = st.columns(2)
-        with col_e1:
-            _embed_col = st.selectbox("Column to embed", _embed_df.columns, key="embed_col")
-        with col_e2:
-            _embed_prompt = st.selectbox(
-                "Prompt type",
-                ["none (document)", "web_search_query"],
-                key="embed_prompt",
-                help="Use 'web_search_query' for short queries; 'none (document)' for passage text.",
-            )
-        col_e3, col_e4 = st.columns(2)
-        with col_e3:
-            _embed_batch = st.slider("Batch size", 16, 512, 256, step=16, key="embed_batch")
-        with col_e4:
-            _embed_out_key = st.text_input("HDF5 key", value="df", key="embed_out_key")
-        _embed_out_name = st.text_input(
-            "Output filename", value="embeddings_output.h5", key="embed_out_name"
-        )
-
-        if st.button("Compute Embeddings", key="btn_compute_embed"):
-            import tempfile as _tmp_out_mod
-            texts = _embed_df[_embed_col].fillna("").astype(str).tolist()
-            _is_query = _embed_prompt == "web_search_query"
-            with st.status(
-                f"Encoding {len(texts):,} texts…", expanded=True
-            ) as _embed_stat:
-                import numpy as _np
-                from stqdm import stqdm as _stqdm
-                _batches = [texts[i:i + _embed_batch] for i in range(0, len(texts), _embed_batch)]
-                _all_embs = []
-                for _batch in _stqdm(_batches, desc=f"Encoding ({len(texts):,} texts, batch={_embed_batch})"):
-                    with torch.no_grad():
-                        _encode = get_embed_model().encode_query if _is_query else get_embed_model().encode_document
-                        _all_embs.append(_encode(_batch, show_progress_bar=False))
-                _embeddings = _np.vstack(_all_embs)
-                _out_df = _embed_df.copy()
-                _out_df["embeddings"] = _embeddings.tolist()
-                with _tmp_out_mod.NamedTemporaryFile(suffix=".h5", delete=False) as _out_tmp:
-                    _out_path = _out_tmp.name
-                _out_df.to_hdf(_out_path, key=_embed_out_key, mode="w")
-                with open(_out_path, "rb") as _fh:
-                    _h5_bytes = _fh.read()
-                _embed_stat.update(
-                    label=f"Done — {len(texts):,} rows, dim {_embeddings.shape[1]}",
-                    state="complete",
-                    expanded=False,
-                )
-            st.success(f"Embedding shape: {_embeddings.shape}")
-            st.download_button(
-                label=f"Download {_embed_out_name}",
-                data=_h5_bytes,
-                file_name=_embed_out_name,
-                mime="application/octet-stream",
-                key="dl_embed_h5",
-            )
-
 
 # ── SCU Normalization (optional — toggle in the app.py sidebar) ───────────────
 # When the global "Apply SCU normalization" toggle is on, normalize whatever
@@ -2560,7 +2753,10 @@ if st.session_state.get('scu_normalize_enabled'):
             "**SCU five-criterion eligibility gate** (`scu_eligible` plus the "
             "per-criterion columns). Turn this off in the app sidebar to hide."
         )
-        render_scu_normalization(st.session_state['parsed_responses'])
+        render_scu_normalization(
+            st.session_state['parsed_responses'],
+            show_advanced_filters=restore_file is not None,
+        )
     else:
         st.caption(
             "🧹 SCU Normalization is enabled — parse a dataset or load a "
