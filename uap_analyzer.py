@@ -1536,6 +1536,102 @@ def schema_complete(record, template):
     return out
 
 
+def _template_leaf_paths(template, pre=""):
+    """Dotted leaf paths of a schema template (lists/scalars are leaves)."""
+    out = []
+    if isinstance(template, dict) and template:
+        for k, v in template.items():
+            out += _template_leaf_paths(v, f"{pre}.{k}" if pre else k)
+    elif pre:
+        out.append(pre)
+    return out
+
+
+def _flatten_record(rec, pre=""):
+    """Flatten nested dicts to dotted paths; lists/scalars stay whole."""
+    flat = {}
+    if isinstance(rec, dict):
+        for k, v in rec.items():
+            key = f"{pre}.{k}" if pre else k
+            if isinstance(v, dict) and v:
+                flat.update(_flatten_record(v, key))
+            else:
+                flat[key] = v
+    return flat
+
+
+def _is_blank_value(v):
+    if v is None:
+        return True
+    if isinstance(v, (list, dict)):
+        return len(v) == 0
+    return str(v).strip() == ""
+
+
+def schema_prune_flat(flat: dict, leaf_paths: list) -> tuple[dict, dict]:
+    """Rescue-then-prune a flat {dotted path: value} record against the schema.
+
+    LLMs occasionally mis-nest whole blocks (e.g. one gpt-4o-mini record emitted
+    eleven top-level blocks INSIDE `military`, minting 146 phantom columns) or
+    transplant fields into sibling blocks (`classification.trustScore`). Rules,
+    applied to every non-blank off-schema path:
+      1. longest-suffix rescue — `military.investigation.timeliness` relocates to
+         the template leaf `investigation.timeliness` it ends with;
+      2. unique-leaf rescue — `classification.trustScore` relocates to
+         `assessment.trustScore` when that leaf name exists exactly once;
+      3. never overwrite — relocation only fills a blank target;
+      4. drop what remains (invented fields like `classification.FLYBY`,
+         ambiguous leaves like `.notes`).
+    Returns (pruned_flat, {"relocated": {src: dst}, "dropped": [paths]}).
+    """
+    from collections import defaultdict
+    leaf_set = set(leaf_paths)
+    by_leaf = defaultdict(list)
+    for p in leaf_paths:
+        by_leaf[p.split(".")[-1].lower()].append(p)
+
+    out = {p: v for p, v in flat.items() if p in leaf_set}
+    relocated, dropped = {}, []
+    for p, v in flat.items():
+        if p in leaf_set:
+            continue
+        if _is_blank_value(v):
+            dropped.append(p)
+            continue
+        cands = [t for t in leaf_paths if p.endswith("." + t)]
+        target = max(cands, key=len) if cands else None
+        if target is None:
+            uniq = by_leaf.get(p.split(".")[-1].lower(), [])
+            if len(uniq) == 1:
+                target = uniq[0]
+        if target is not None and _is_blank_value(out.get(target)):
+            out[target] = v
+            relocated[p] = target
+        else:
+            dropped.append(p)
+    return out, {"relocated": relocated, "dropped": dropped}
+
+
+def schema_prune(record, template) -> tuple[dict, dict]:
+    """Record-level rescue-then-prune (see schema_prune_flat). Returns the
+    re-nested record plus the relocation/drop audit."""
+    if not isinstance(record, dict) or not isinstance(template, dict) or not template:
+        return record, {"relocated": {}, "dropped": []}
+    out_flat, info = schema_prune_flat(_flatten_record(record), _template_leaf_paths(template))
+    nested: dict = {}
+    for p, v in out_flat.items():
+        cur = nested
+        parts = p.split(".")
+        for part in parts[:-1]:
+            nxt = cur.setdefault(part, {})
+            if not isinstance(nxt, dict):        # scalar/dict collision — keep scalar
+                break
+            cur = nxt
+        else:
+            cur[parts[-1]] = v
+    return nested, info
+
+
 class FatalParseError(RuntimeError):
     """A non-retryable, run-fatal API failure — an unfunded/empty account
     (``insufficient_quota``), a bad key (401 / ``invalid_api_key``), or a
@@ -2073,11 +2169,19 @@ class UAPParser:
 
     # ── Post-processing ───────────────────────────────────────────────────
 
-    def parse_responses(self, format_long=None) -> dict:
+    def parse_responses(self, format_long=None, strict_schema: bool = True) -> dict:
         """Extract JSON from every stored response. When the schema template is
-        known (arg, or remembered from process_descriptions), each record is
-        schema-completed so LLM-dropped keys still appear as blank fields —
-        guaranteeing every schema column exists downstream."""
+        known (arg, or remembered from process_descriptions), each record is:
+
+        1. rescue-then-pruned (``strict_schema``): mis-nested blocks and
+           transplanted fields are relocated to their canonical paths (never
+           overwriting real values); leftover off-schema keys are dropped, so
+           one malformed record can't mint phantom columns for the whole run.
+           This happens at the RECORD level — before any DataFrame build or
+           carry-through/source-column concatenation, which must never be pruned.
+        2. schema-completed: LLM-dropped keys become blank fields, guaranteeing
+           every schema column exists downstream.
+        """
         template = format_long if format_long is not None else self.format_long
         if isinstance(template, str):
             try:
@@ -2088,17 +2192,31 @@ class UAPParser:
             template = None
 
         parsed, failed = {}, 0
+        n_relocated = n_dropped = 0
         for k, v in self.responses.items():
             if k in _BATCH_SENTINELS:
                 continue
             result = _extract_json(v)
             if result is not None:
-                parsed[k] = schema_complete(result, template) if template else result
+                if template:
+                    if strict_schema:
+                        result, info = schema_prune(result, template)
+                        n_relocated += len(info["relocated"])
+                        n_dropped += len([p for p in info["dropped"]])
+                        for src, dst in info["relocated"].items():
+                            logging.info(f"schema_prune: relocated {src} -> {dst}")
+                    result = schema_complete(result, template)
+                parsed[k] = result
             else:
                 failed += 1
                 logging.warning(f"Could not parse response for key (first 120 chars): {str(v)[:120]!r}")
-        logging.info(f"Parsed: {len(parsed)}  |  Failed: {failed}"
-                     + ("  (schema-completed)" if template else ""))
+        extra = ""
+        if template:
+            extra = "  (schema-completed"
+            if strict_schema:
+                extra += f"; strict prune: {n_relocated} values relocated, {n_dropped} off-schema keys dropped"
+            extra += ")"
+        logging.info(f"Parsed: {len(parsed)}  |  Failed: {failed}{extra}")
         return parsed
 
     def responses_to_df(self, col: str, parsed_responses: dict) -> pd.DataFrame:
