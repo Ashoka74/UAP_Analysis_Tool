@@ -12,7 +12,7 @@
   ],
   "analysis_code": "string — SCU composite analysis code combining phase, facility class and activity class (e.g. 'P1251', 'P12C2'); used to drive pivot tables and pattern aggregations. Empty if not coded.",
   "reconciliation_status": "enum [pending, reconciled, excluded, U] — outcome of the SCU Quality Review reconciliation meeting. 'reconciled' = accepted into the study corpus; 'excluded' = reviewed and dropped (reason in notes); 'pending' = not yet reviewed; 'U' = status unknown.",
-  "curation_standard_passed": "enum [Y, N, U] — Y if the case passes all five SCU general curation criteria (Incident Report within 1 year, Data Quality, Anomalous Characterization, Investigation, Credibility); N if any single criterion fails; U if criteria cannot be evaluated.",
+  "curation_standard_passed": "enum [Y, N, U] — Y ONLY if the source explicitly states the case passed SCU curation; N only if explicitly failed; otherwise ALWAYS U (this verdict is normally assigned downstream by the curation pipeline, not inferred while parsing)",
   "sources_appearing": [
    "enum [Sparks2020, NICAP_chrono, ClearIntent, FadedGiant, Hynek_investigation, McDonald_investigation, BlueBook, other] — all source lists/works in which this case appears. Multi-source corroboration is stronger than single-source. Empty if none recorded."
   ]
@@ -165,16 +165,6 @@
    "speed_unaffected_by_trans_medium": "enum [Y, N, U] — speed apparently unaffected by travel across media (air/water/space)"
   }
  },
- "anomaly": {
-  "flight": "enum [Y, N, U] — Y ONLY for flight beyond the performance envelope of any known aircraft or drone (hypersonic without sonic boom, instantaneous acceleration or stop, right-angle turns at speed, air-to-water transit). Ordinary manoeuvres, hovering, a drone at unusual altitude, or evasive action taken BY a manned aircraft are NOT anomalous flight — set N. U only when flight behaviour is not described.",
-  "signal": "enum [Y, N, U] — Y ONLY for anomalous electromagnetic behaviour attributed to the object itself (unexplained transmissions, coded radar returns, radio/radar interference coinciding with the object). Routine ATC radio traffic, pilot reports, or normal transponder data are NOT signal anomalies — set N. U when not described.",
-  "structure": "enum [Y, N, U] — Y ONLY when the reported shape, size, surface or structure is beyond conventional aircraft/drone/balloon design (seamless metallic craft, structured object with no visible control surfaces or propulsion, physically impossible geometry). A mere description of an ordinary object's shape, size or colour (e.g. 'a 4-foot black quadcopter') is NOT a structural anomaly — set N. U when appearance is not described.",
-  "occupant": "enum [Y, N, U] — Y ONLY if beings are observed in, on, or immediately beside the object. A drone operator or pilot on the ground is NOT an occupant — set N. U when not mentioned.",
-  "summary": "string — one-sentence justification citing the source text for EVERY anomaly field set to Y; leave blank when none are Y",
-  "validated": "enum [Y, N, U] — Y if an official investigative body (USAF, FBI, AARO, NICAP, etc.) reviewed the case and could not produce a conventional explanation; N if the same body produced a conventional explanation; U if no official review conclusion is stated in the source",
-  "biologicalEntity": "enum [Y, N, U] — Y if the source describes or alleges recovery, encounter, or direct contact with a non-human biological entity (living or deceased); N if explicitly none; U if unknown or not mentioned",
-  "materialRecovery": "enum [Y, N, U] — Y if the source describes or alleges physical recovery of craft debris, material fragments, or other non-biological physical evidence attributable to the UAP; N if explicitly none; U if unknown or not mentioned"
- },
  "engagement": {
   "engagement_type": {
    "close_approach": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP made a close approach (<30 m / <98 ft) to witnesses, vehicles or structures",
@@ -183,10 +173,10 @@
    "interference_weapons": "enum [P, S, blank] — P=primary, S=secondary engagement type; weapons systems were interfered with or disabled",
    "loitering": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP hovered, circled or loitered for an extended period",
    "military_intrusions": "enum [P, S, blank] — P=primary, S=secondary engagement type; UAP intruded into a secured installation or restricted airspace",
-   "no_engagement": "enum [P, blank] — set P ONLY when no other engagement_type field is P or S; if ANY other engagement type applies, no_engagement MUST be blank. Never use S here.",
    "occupant_encounter": "enum [P, S, blank] — P=primary, S=secondary engagement type; occupants were directly encountered by witnesses",
    "occupant_observed": "enum [P, S, blank] — P=primary, S=secondary engagement type; occupants were visually observed from a distance, no encounter",
-   "radical_flight": "enum [P, S, blank] — P=primary, S=secondary engagement type; physically impossible manoeuvres (right-angle turns, instant acceleration, sudden reversal)"
+   "radical_flight": "enum [P, S, blank] — P=primary, S=secondary engagement type; physically impossible manoeuvres (right-angle turns, instant acceleration, sudden reversal)",
+   "no_engagement": "enum [P, blank] — set P ONLY when no other engagement_type field is P or S; if ANY other engagement type applies, no_engagement MUST be blank. Never use S here."
   },
   "engagement_flags": {
    "active_radar_jamming": "enum [Y, N, U]",
@@ -212,6 +202,16 @@
   "communicationAttempts": "string — perceived attempts at communication from the UAP; empty if none",
   "uap_response": "string — how the UAP responded to witness, vehicle or aircraft actions (approach, signalling, pursuit, evasion); empty if none",
   "belligerence": "enum [Y, N, U] — hostile or aggressive action by the UAP toward witnesses, vehicles or aircraft"
+ },
+ "anomaly": {
+  "flight": "enum [Y, N, U] — Y ONLY for flight beyond the performance envelope of any known aircraft or drone (hypersonic without sonic boom, instantaneous acceleration or stop, right-angle turns at speed, air-to-water transit). Ordinary manoeuvres, hovering, a drone at unusual altitude, or evasive action taken BY a manned aircraft are NOT anomalous flight — set N. U only when flight behaviour is not described.",
+  "signal": "enum [Y, N, U] — Y ONLY for anomalous electromagnetic behaviour attributed to the object itself (unexplained transmissions, coded radar returns, radio/radar interference coinciding with the object). Routine ATC radio traffic, pilot reports, or normal transponder data are NOT signal anomalies — set N. U when not described.",
+  "structure": "enum [Y, N, U] — Y ONLY when the reported shape, size, surface or structure is beyond conventional aircraft/drone/balloon design (seamless metallic craft, structured object with no visible control surfaces or propulsion, physically impossible geometry). A mere description of an ordinary object's shape, size or colour (e.g. 'a 4-foot black quadcopter') is NOT a structural anomaly — set N. U when appearance is not described.",
+  "occupant": "enum [Y, N, U] — Y ONLY if beings are observed in, on, or immediately beside the object. A drone operator or pilot on the ground is NOT an occupant — set N. U when not mentioned.",
+  "validated": "enum [Y, N, U] — Y if an official investigative body (USAF, FBI, AARO, NICAP, etc.) reviewed the case and could not produce a conventional explanation; N if the same body produced a conventional explanation; U if no official review conclusion is stated in the source",
+  "biologicalEntity": "enum [Y, N, U] — Y if the source describes or alleges recovery, encounter, or direct contact with a non-human biological entity (living or deceased); N if explicitly none; U if unknown or not mentioned",
+  "materialRecovery": "enum [Y, N, U] — Y if the source describes or alleges physical recovery of craft debris, material fragments, or other non-biological physical evidence attributable to the UAP; N if explicitly none; U if unknown or not mentioned",
+  "summary": "string — one-sentence justification citing the source text for EVERY field in this anomaly block set to Y; leave blank when none are Y"
  },
  "military": {
   "facility_name": "string — name of the military base, nuclear site or government facility; empty if not applicable",
