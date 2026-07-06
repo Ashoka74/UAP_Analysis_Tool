@@ -196,6 +196,84 @@ def compute_cramers_v_df(df: pd.DataFrame, cols: list[str],
     return cv
 
 
+# Cochran's rule of thumb: a chi-square test is unreliable when > 20% of cells
+# have expected frequency < 5, or any cell has expected < 1.
+_SPARSE_FRAC = 0.20
+
+
+def _table_test(ct: pd.DataFrame) -> dict:
+    """Association test + sparsity diagnostics for one contingency table.
+
+    Returns ``{p, test, sparse, sparse_frac}``. Sparse 2×2 tables fall back to
+    Fisher's exact test (valid at any cell count); larger sparse tables keep the
+    chi-square p but are FLAGGED so the UI can warn that both V and p are
+    unreliable there.
+    """
+    from scipy.stats import chi2_contingency, fisher_exact
+
+    out = {"p": None, "test": "chi2", "sparse": False, "sparse_frac": 0.0}
+    if ct.shape[0] < 2 or ct.shape[1] < 2 or ct.values.sum() == 0:
+        return out
+    try:
+        chi2, p, dof, expected = chi2_contingency(ct)
+        frac = float((expected < 5).mean())
+        out["sparse_frac"] = round(frac, 3)
+        out["sparse"] = bool(frac > _SPARSE_FRAC or (expected < 1).any())
+        out["p"] = float(p)
+    except ValueError:
+        return out
+    if out["sparse"] and ct.shape == (2, 2):
+        try:
+            _odds, p_f = fisher_exact(ct.values)
+            out["p"] = float(p_f)
+            out["test"] = "fisher"
+        except ValueError:
+            pass
+    return out
+
+
+def _matrix_with_stats(df: pd.DataFrame, cols: list[str],
+                       drop_missing: bool = False) -> tuple[pd.DataFrame, dict]:
+    """Cramér's V matrix + per-pair test stats in ONE pass over the crosstabs.
+
+    Returns ``(cv_df, stats)`` where stats maps ``(c1, c2)`` (upper triangle) to
+    ``{p, q, test, sparse, sparse_frac}``. p-values are Benjamini–Hochberg
+    FDR-adjusted (``q``) across ALL k(k-1)/2 pair tests actually computed — the
+    multiple-comparisons correction a screening matrix needs (claude/gemini
+    review items 4.5 / 2.2).
+    """
+    from uap_analyzer import cramers_v
+
+    cv = pd.DataFrame(index=cols, columns=cols, data=np.nan, dtype=float)
+    cache = {c: _coalesce(df[c]) for c in cols}
+    stats: dict[tuple, dict] = {}
+    for i, c1 in enumerate(cols):
+        cv.at[c1, c1] = 1.0
+        for c2 in cols[i + 1:]:
+            a, b = cache[c1], cache[c2]
+            if drop_missing:
+                keep = (a != _MISSING_LABEL) & (b != _MISSING_LABEL)
+                a, b = a[keep], b[keep]
+            if len(a) == 0:
+                v, entry = 0.0, {"p": None, "test": "chi2", "sparse": False, "sparse_frac": 0.0}
+            else:
+                ct = pd.crosstab(a, b)
+                v = float(cramers_v(ct))
+                entry = _table_test(ct)
+            cv.at[c1, c2] = v
+            cv.at[c2, c1] = v
+            stats[(c1, c2)] = entry
+
+    # BH-FDR across every test with a p-value.
+    keys = [k for k, s in stats.items() if s["p"] is not None]
+    if keys:
+        from statsmodels.stats.multitest import multipletests
+        _rej, q, _a1, _a2 = multipletests([stats[k]["p"] for k in keys], method="fdr_bh")
+        for k, qv in zip(keys, q):
+            stats[k]["q"] = float(qv)
+    return cv, stats
+
+
 def cramers_v_ci(a: pd.Series, b: pd.Series, *, n_boot: int = 500, seed: int = 42,
                  alpha: float = 0.05) -> list[float] | None:
     """Percentile bootstrap confidence interval for Cramér's V between two aligned
@@ -281,9 +359,22 @@ def cramers_v_report(df: pd.DataFrame, columns: list[str] | None = None, *,
             "groups": group_by_parent(cols),
         }
 
-    cv = compute_cramers_v_df(df, cols, drop_missing=drop_missing)
+    cv, pair_stats = _matrix_with_stats(df, cols, drop_missing=drop_missing)
     pairs, n_excluded = pairs_table(cv, exclude_trivial=exclude_trivial)
     high = high_correlation_columns(cv, strong_threshold, exclude_trivial)
+
+    # Attach the per-pair test stats (raw p, BH-FDR q across ALL computed pairs,
+    # test used, sparsity flag) so the UI can show significance honestly.
+    for p in pairs:
+        s = pair_stats.get((p["a"], p["b"])) or pair_stats.get((p["b"], p["a"]))
+        if s:
+            if s.get("p") is not None:
+                p["p"] = round(s["p"], 4)
+            if s.get("q") is not None:
+                p["q"] = round(s["q"], 4)
+            p["test"] = s["test"]
+            if s.get("sparse"):
+                p["sparse"] = True
 
     # Optional bootstrap 95% CIs for the strongest pairs (bounded so the matrix
     # stays cheap — the full matrix would be n_boot × k² crosstabs).
@@ -299,10 +390,15 @@ def cramers_v_report(df: pd.DataFrame, columns: list[str] | None = None, *,
                 p["ci"] = ci
 
     matrix = [[None if pd.isna(v) else round(float(v), 3) for v in cv.loc[r]] for r in cols]
+    n_tests = sum(1 for s in pair_stats.values() if s.get("p") is not None)
+    n_sparse = sum(1 for s in pair_stats.values() if s.get("sparse"))
     return {
         "labels": cols,
         "matrix": matrix,
         "pairs": pairs,
+        "n_tests": n_tests,               # pair tests entering the BH-FDR correction
+        "n_sparse": n_sparse,             # pairs with Cochran-sparse tables (V/p unreliable)
+        "fdr_method": "benjamini-hochberg",
         "n_excluded": n_excluded,
         "high_correlation_columns": high,
         "bands": bands,
@@ -329,6 +425,7 @@ def contingency(df: pd.DataFrame, c1: str, c2: str, drop_missing: bool = False,
     ct = pd.crosstab(a, b)
     v = float(cramers_v(ct))
     ci = cramers_v_ci(a, b)   # 95% bootstrap CI on the full pair (pre-trim)
+    test = _table_test(ct)    # p, chi2/fisher, Cochran sparsity flag (pre-trim)
     # Trim to the top_n most frequent categories on each axis for display.
     row_order = ct.sum(axis=1).sort_values(ascending=False).index[:top_n]
     col_order = ct.sum(axis=0).sort_values(ascending=False).index[:top_n]
@@ -339,6 +436,10 @@ def contingency(df: pd.DataFrame, c1: str, c2: str, drop_missing: bool = False,
         "matrix": ct.values.astype(int).tolist(),
         "v": round(v, 3),
         "ci": ci,                 # [lo, hi] 95% bootstrap CI, or None
+        "p": round(test["p"], 4) if test["p"] is not None else None,
+        "test": test["test"],     # "chi2" | "fisher"
+        "sparse": test["sparse"], # Cochran rule: >20% expected<5 or any <1
+        "sparse_frac": test["sparse_frac"],
         "n": int(len(a)),
     }
 

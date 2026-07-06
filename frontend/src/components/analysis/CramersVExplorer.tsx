@@ -250,8 +250,21 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
     if (report.high_correlation_columns.length) {
       lines.push(`High-correlation columns (≥ ${strong.toFixed(2)}): ${report.high_correlation_columns.join(', ')}.`);
     }
+    if (report.n_tests) {
+      lines.push(
+        `p-values are Benjamini–Hochberg FDR-adjusted (q) across all ${report.n_tests} pair tests; ` +
+        'pairs marked SPARSE violate the Cochran rule (expected < 5 in > 20% of cells) — treat their V and p as unreliable.',
+      );
+    }
     lines.push('Strongest pairs (a × b: V):');
-    report.pairs.slice(0, 25).forEach((p) => lines.push(`- ${p.a} × ${p.b}: ${p.v.toFixed(3)}`));
+    report.pairs.slice(0, 25).forEach((p) => {
+      const stats = [
+        p.q != null ? `q=${p.q.toFixed(4)}` : null,
+        p.test === 'fisher' ? 'fisher-exact' : null,
+        p.sparse ? 'SPARSE' : null,
+      ].filter(Boolean).join(', ');
+      lines.push(`- ${p.a} × ${p.b}: ${p.v.toFixed(3)}${stats ? ` (${stats})` : ''}`);
+    });
     return lines.join('\n');
   };
 
@@ -613,7 +626,14 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
                 subtitle={
                   `Cramér's V = ${contingency.v}` +
                   (contingency.ci ? ` (95% CI ${contingency.ci[0]}–${contingency.ci[1]})` : '') +
-                  ` · N = ${contingency.n.toLocaleString()}`
+                  (contingency.p != null
+                    ? ` · p = ${contingency.p < 0.0001 ? '<0.0001' : contingency.p}` +
+                      (contingency.test === 'fisher' ? ' (Fisher exact)' : '')
+                    : '') +
+                  ` · N = ${contingency.n.toLocaleString()}` +
+                  (contingency.sparse
+                    ? ` · ⚠ sparse table (${Math.round((contingency.sparse_frac ?? 0) * 100)}% of cells expected < 5)`
+                    : '')
                 }
                 className="mt-4"
                 noPad
@@ -720,7 +740,10 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
           <div className="space-y-4">
             <Panel
               title="Strongest Pairs"
-              subtitle={report.n_excluded ? `${report.n_excluded} trivial pairs hidden` : undefined}
+              subtitle={[
+                report.n_excluded ? `${report.n_excluded} trivial pairs hidden` : null,
+                report.n_tests ? `p-values BH-FDR corrected across ${report.n_tests} tests` : null,
+              ].filter(Boolean).join(' · ') || undefined}
             >
               <div className="max-h-96 space-y-1 overflow-y-auto">
                 {report.pairs.slice(0, 40).map((p, i) => (
@@ -730,6 +753,14 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
                     className="flex w-full items-center justify-between gap-2 rounded border border-border/40 bg-raised px-2.5 py-1.5 text-left text-[11px] hover:border-accent"
                   >
                     <span className="truncate text-text-secondary">
+                      {p.sparse && (
+                        <span
+                          className="mr-1 text-warning"
+                          title="Sparse contingency table (Cochran rule: expected < 5 in > 20% of cells) — V and p unreliable"
+                        >
+                          ⚠
+                        </span>
+                      )}
                       {p.a} <span className="text-text-muted">×</span> {p.b}
                     </span>
                     <span className="flex shrink-0 flex-col items-end leading-tight">
@@ -740,11 +771,21 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
                       >
                         {p.v.toFixed(3)}
                       </span>
-                      {p.ci && (
-                        <span className="font-mono text-[9px] text-text-muted" title="95% bootstrap CI">
-                          [{p.ci[0].toFixed(2)}, {p.ci[1].toFixed(2)}]
-                        </span>
-                      )}
+                      <span className="font-mono text-[9px] text-text-muted">
+                        {p.ci && (
+                          <span title="95% bootstrap CI">
+                            [{p.ci[0].toFixed(2)}, {p.ci[1].toFixed(2)}]{' '}
+                          </span>
+                        )}
+                        {p.q != null && (
+                          <span
+                            className={p.q < 0.05 ? 'text-success' : 'text-text-muted'}
+                            title={`FDR-adjusted p (BH)${p.test === 'fisher' ? " — Fisher's exact (sparse 2×2)" : ''}; raw p=${p.p ?? '—'}`}
+                          >
+                            q={p.q < 0.001 ? '<.001' : p.q.toFixed(3)}
+                          </span>
+                        )}
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -752,6 +793,12 @@ export function CramersVExplorer({ source, onXgboost }: Props) {
                   <p className="text-xs text-text-muted">No non-trivial pairs found.</p>
                 )}
               </div>
+              {(report.n_sparse ?? 0) > 0 && (
+                <p className="mt-2 text-[10px] text-text-muted">
+                  ⚠ {report.n_sparse} pair(s) have sparse tables — treat their V/p as unreliable
+                  (sparse 2×2 pairs use Fisher’s exact test).
+                </p>
+              )}
             </Panel>
 
             {report.high_correlation_columns.length > 0 && (

@@ -46,7 +46,7 @@ WORKDIR /app
 # CUDA-12 PyTorch (matches the RAPIDS CUDA runtime). cu121 wheels bundle their
 # own CUDA libs and run on CUDA 12.x hosts. Installed first so the bare `torch`
 # in requirements.txt is already satisfied and pip won't pull another build.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cu121
+RUN pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
 
 # App deps. cupy/cuml/cuvs/rmm come from the base image and are (intentionally)
 # NOT in requirements.txt. Constrain numpy/pandas/pyarrow to the RAPIDS-pinned

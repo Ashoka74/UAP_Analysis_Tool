@@ -30,7 +30,7 @@ WORKDIR /app
 
 # CPU-only torch first so requirements.txt's bare `torch` is already satisfied
 # and pip does not pull the multi-GB CUDA build.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt uvicorn

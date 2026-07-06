@@ -285,7 +285,16 @@ export interface ColumnGroupsResponse {
 export interface CramersVResponse {
   labels: string[];
   matrix: (number | null)[][];
-  pairs: { a: string; b: string; v: number; ci?: [number, number] }[];
+  pairs: {
+    a: string; b: string; v: number; ci?: [number, number];
+    p?: number;            // raw association-test p-value
+    q?: number;            // Benjamini–Hochberg FDR-adjusted (across all pair tests)
+    test?: 'chi2' | 'fisher';
+    sparse?: boolean;      // Cochran rule violated — V and p unreliable
+  }[];
+  n_tests?: number;        // pair tests entering the FDR correction
+  n_sparse?: number;
+  fdr_method?: string;
   n_excluded: number;
   high_correlation_columns: string[];
   bands: Record<string, string[]>;
@@ -300,6 +309,10 @@ export interface ContingencyResponse {
   matrix: number[][];
   v: number;
   ci?: [number, number] | null;   // 95% bootstrap CI on Cramér's V
+  p?: number | null;              // association-test p-value (chi2 / fisher)
+  test?: 'chi2' | 'fisher';
+  sparse?: boolean;               // Cochran rule violated (expected<5 in >20% of cells)
+  sparse_frac?: number;
   n: number;
 }
 

@@ -1,38 +1,37 @@
-fast_hdbscan
-h5py
-tables
-openpyxl
-google-generativeai
-cohere
-datamapplot
-fastdtw
-ipython
+fast_hdbscan==0.2.2
+h5py==3.14.0
+tables==3.10.2
+openpyxl==3.1.5
+google-generativeai==0.8.5
+cohere==5.17.0
+datamapplot==0.6.3
+fastdtw==0.3.4
+ipython==9.4.0
 keplergl==0.3.2
-matplotlib
-numpy
-openai
-pandas
-Pillow
-pymupdf
-plotly
-protobuf
-python_dateutil
-python_Levenshtein
-Requests
-scikit_learn
-scipy
-seaborn
-sentence_transformers
-squarify
-statsmodels
-st-paywall
-streamlit
-streamlit_extras
+matplotlib==3.10.5
+numpy==2.2.6
+openai==1.99.9
+pandas==2.3.1
+Pillow==11.3.0
+pymupdf==1.27.2.3
+plotly==6.3.0
+protobuf==5.29.5
+python_dateutil==2.9.0.post0
+python_Levenshtein==0.27.1
+Requests==2.32.4
+scikit_learn==1.7.1
+scipy==1.16.1
+seaborn==0.13.2
+sentence_transformers==5.1.0
+squarify==0.4.4
+statsmodels==0.14.5
+streamlit==1.48.1
+streamlit_extras==0.7.6
 streamlit_kepler_component
-streamlit_keplergl
-torch
-umap_learn
-xgboost
+streamlit_keplergl==0.3.0
+torch==2.8.0
+umap_learn==0.5.9.post2
+xgboost==3.0.4
 tf-keras
 
 # Imported by the app but previously missing from requirements (present in the
@@ -42,19 +41,19 @@ tf-keras
 # transformers (pdf_ocr LightOnOCR) are lazy feature deps.
 # Note: GPU acceleration (cupy/cuml/cuvs/rmm) and tiktoken are optional and
 # guarded by try/except, so they are intentionally NOT pinned here.
-stqdm
-tqdm
-psutil
-transformers
-psycopg[binary]
+stqdm==0.0.5
+tqdm==4.67.1
+psutil==7.0.0
+transformers==5.8.0.dev0
+psycopg[binary]==3.3.4
 
 # Document Preprocessing pipeline (pipeline/) — vendored scripts' deps.
 # (openai, Pillow, pymupdf, Requests are already listed above.)
 # Note: pdf2image also needs the system `poppler` binary (poppler-utils).
-pyyaml
-google-genai
-pypdf
-mistralai
-reportlab
-pdf2image
-pdfplumber
+pyyaml==6.0.2
+google-genai==2.6.0
+pypdf==6.12.0
+mistralai==1.12.4
+reportlab==4.5.1
+pdf2image==1.17.0
+pdfplumber==0.11.9

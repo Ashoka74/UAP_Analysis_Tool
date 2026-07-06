@@ -166,6 +166,23 @@ export const api = {
     return request('/parse/use-loaded', { method: 'POST' });
   },
 
+  // Download the FULL parsed dataset as CSV (JSON payloads are display-capped
+  // at 2000 rows; this is the uncapped server-side export).
+  async exportParsedCsv(): Promise<void> {
+    const res = await fetch(`${BASE}/parse/export`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(body.detail || `Export failed: ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'parsed_output_full.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   // Import a downloaded OpenAI Batch API output (.jsonl) as parsed data —
   // lands in the session exactly like a parallel parse run.
   uploadBatchOutput(file: File, formatJson?: string): Promise<ParseRunResponse> {

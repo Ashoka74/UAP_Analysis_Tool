@@ -1009,6 +1009,25 @@ def parse_result(state: SessionState = Depends(get_session)):
             "n_records": len(state.parsed_df)}
 
 
+@app.get("/api/parse/export")
+def parse_export(state: SessionState = Depends(get_session)):
+    """Download the FULL parsed dataset as CSV. The JSON payloads returned by
+    the parse endpoints are display-capped (max_rows=2000) so big runs don't
+    ship tens of MB to the browser — this endpoint is the uncapped export
+    (the in-table CSV button only sees the displayed rows)."""
+    from fastapi.responses import Response
+    if state.parsed_df is None:
+        raise HTTPException(status_code=400, detail="No parsed data in session.")
+    import io as _io
+    buf = _io.StringIO()
+    state.parsed_df.to_csv(buf, index=False)
+    return Response(
+        content="\ufeff" + buf.getvalue(),   # BOM keeps Excel in UTF-8
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="parsed_output_full.csv"'},
+    )
+
+
 # ---------------------------------------------------------------------------
 # SCU normalization (scu_normalizer parity)
 # ---------------------------------------------------------------------------

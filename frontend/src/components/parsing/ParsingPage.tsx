@@ -646,12 +646,26 @@ export function ParsingPage() {
 
       {running && <LoadingSpinner text="Sending reports to the LLM… this may take a while." />}
 
-      {/* Parsed output table */}
+      {/* Parsed output table — the JSON payload is display-capped at 2000 rows;
+          the button downloads the full parsed dataset from the server. */}
       {result && result.data.columns.length > 0 && (
         <Panel
           title="Parsed Output"
-          subtitle={`${result.data.returned_rows} rows · ${result.data.columns.length} fields`}
-          actions={<Layers className="h-4 w-4 text-text-muted" />}
+          subtitle={
+            `${result.data.returned_rows.toLocaleString()} of ${result.data.total_rows.toLocaleString()} rows shown · ` +
+            `${result.data.columns.length} fields` +
+            (result.data.total_rows > result.data.returned_rows ? ' · table preview is capped, download for all rows' : '')
+          }
+          actions={
+            <button
+              onClick={() => api.exportParsedCsv().catch((e) => setError(e instanceof Error ? e.message : 'Export failed'))}
+              title="Download the FULL parsed dataset as CSV (the in-table export only has the displayed rows)"
+              className="flex items-center gap-1.5 rounded-md border border-border bg-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Download full CSV ({result.data.total_rows.toLocaleString()} rows)
+            </button>
+          }
           noPad
         >
           <DataTable data={result.data} maxHeight="calc(100vh - 360px)" />
