@@ -1479,6 +1479,36 @@ def estimate_cost(
     }
 
 
+def _empty_of(template_value):
+    """The 'blank' counterpart of a schema template value: nested dicts keep
+    their full key structure (leaves -> ''), lists -> [], scalars -> ''."""
+    if isinstance(template_value, dict):
+        return {k: _empty_of(v) for k, v in template_value.items()}
+    if isinstance(template_value, list):
+        return []
+    return ""
+
+
+def schema_complete(record, template):
+    """Pad a parsed record so every schema-template key exists (missing or None
+    keys -> blank structure; nested dicts recursed; extra record keys kept).
+
+    LLMs routinely drop keys they never assign despite "leave blank" prompting —
+    and once a key is absent from EVERY record, pd.json_normalize produces no
+    column at all, so downstream consumers (SCU gate, column mapping, XGBoost)
+    silently lose the field. Padding makes absence explicit: the column exists
+    and is blank."""
+    if not isinstance(record, dict) or not isinstance(template, dict):
+        return record
+    out = dict(record)
+    for k, tv in template.items():
+        if k not in out or out[k] is None:
+            out[k] = _empty_of(tv)
+        elif isinstance(tv, dict) and isinstance(out[k], dict):
+            out[k] = schema_complete(out[k], tv)
+    return out
+
+
 class FatalParseError(RuntimeError):
     """A non-retryable, run-fatal API failure — an unfunded/empty account
     (``insufficient_quota``), a bad key (401 / ``invalid_api_key``), or a
@@ -1564,6 +1594,10 @@ class UAPParser:
         self.provider = provider
         self.use_batch = use_batch and provider == "openai"
         self.col      = col
+        # Schema template (dict or JSON string) — refreshed by every
+        # process_descriptions call; used by parse_responses to schema-complete
+        # records so LLM-dropped keys still yield (blank) columns.
+        self.format_long = format_long
         self.checkpoint_path = checkpoint_path
         self.responses: dict[str, str] = {}
         self._responses_lock = _threading.Lock()
@@ -1943,6 +1977,7 @@ class UAPParser:
         For non-blocking Batch API use (Streamlit), call ``submit_batch_only``
         then ``fetch_batch_results`` from a separate button/page rerun.
         """
+        self.format_long = format_long   # remembered for parse_responses padding
         pending = [
             d for d in descriptions
             if d not in self.responses and d not in _BATCH_SENTINELS
@@ -2011,18 +2046,32 @@ class UAPParser:
 
     # ── Post-processing ───────────────────────────────────────────────────
 
-    def parse_responses(self) -> dict:
+    def parse_responses(self, format_long=None) -> dict:
+        """Extract JSON from every stored response. When the schema template is
+        known (arg, or remembered from process_descriptions), each record is
+        schema-completed so LLM-dropped keys still appear as blank fields —
+        guaranteeing every schema column exists downstream."""
+        template = format_long if format_long is not None else self.format_long
+        if isinstance(template, str):
+            try:
+                template = json.loads(template)
+            except (json.JSONDecodeError, TypeError):
+                template = None
+        if not isinstance(template, dict) or not template:
+            template = None
+
         parsed, failed = {}, 0
         for k, v in self.responses.items():
             if k in _BATCH_SENTINELS:
                 continue
             result = _extract_json(v)
             if result is not None:
-                parsed[k] = result
+                parsed[k] = schema_complete(result, template) if template else result
             else:
                 failed += 1
                 logging.warning(f"Could not parse response for key (first 120 chars): {str(v)[:120]!r}")
-        logging.info(f"Parsed: {len(parsed)}  |  Failed: {failed}")
+        logging.info(f"Parsed: {len(parsed)}  |  Failed: {failed}"
+                     + ("  (schema-completed)" if template else ""))
         return parsed
 
     def responses_to_df(self, col: str, parsed_responses: dict) -> pd.DataFrame:
