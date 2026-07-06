@@ -58,7 +58,7 @@ def test_cramers_contingency_conditional_flow(api_client, demo_df):
 
 
 def test_batch_import_display_cap_vs_full_export(api_client, master_schema_text):
-    """The JSON payload is display-capped at 2000 rows; /api/parse/export is not."""
+    """The JSON payload is preview-capped (500 rows); /api/parse/export is not."""
     n = 2100
     lines = [json.dumps({"custom_id": str(i), "response": {"body": {"choices": [
         {"message": {"content": json.dumps({"location": {"country": "US"},
@@ -70,7 +70,7 @@ def test_batch_import_display_cap_vs_full_export(api_client, master_schema_text)
     )
     j = r.json()
     assert r.status_code == 200 and j["n_ok"] == n
-    assert j["data"]["returned_rows"] == 2000              # display cap
+    assert j["data"]["returned_rows"] == 500               # preview cap (30 MB payloads froze the browser)
     assert j["data"]["total_rows"] == n                    # honest total
 
     r = api_client.get("/api/parse/export")

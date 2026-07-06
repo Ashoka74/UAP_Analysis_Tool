@@ -156,3 +156,16 @@ def test_batch_jsonl_roundtrip_rekeys_and_prunes(master_schema_text):
     assert set(parsed) == {"A", "B"}                        # re-keyed to inputs
     assert parsed["B"]["investigation"]["timeliness"] == "prompt"   # pruned+rescued
     assert len(errs) == 1 and "rate limited" in errs[0]
+
+
+def test_extract_json_no_quadratic_blowup_on_degenerate_output():
+    """A truncated/degenerate 600 KB model response (huge whitespace runs, broken
+    JSON) froze batch imports for minutes via catastrophic regex backtracking in
+    the fence-stripping fallback. It must now fail fast."""
+    import time
+    from uap_analyzer import _extract_json
+
+    junk = '{"a": "b",' + ('   \n' * 150_000) + '"c": '   # broken, whitespace-heavy
+    t0 = time.time()
+    assert _extract_json(junk) is None
+    assert time.time() - t0 < 2.0, "fallback chain is superlinear again"

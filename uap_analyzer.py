@@ -1380,8 +1380,16 @@ def _extract_json(text: str) -> dict | None:
         return result
 
     # 2. Strip markdown fences  ```json\n...\n```  or  ```\n...\n```
-    fence = _re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=_re.IGNORECASE)
-    fence = _re.sub(r"\s*```$", "", fence.strip())
+    # Plain string ops on purpose: the previous trailing-fence regex
+    # (r"\s*```$") backtracks quadratically on large whitespace-heavy strings —
+    # one 639 KB degenerate (truncated) model response took >20 s PER attempt
+    # and froze whole batch imports. String ops are O(n).
+    fence = text.strip()
+    if fence.startswith("```"):
+        nl = fence.find("\n")
+        fence = fence[nl + 1:] if nl != -1 else fence[3:].lstrip("json").lstrip()
+    if fence.rstrip().endswith("```"):
+        fence = fence.rstrip()[:-3]
     result = _try(fence)
     if result is not None:
         return result

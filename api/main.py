@@ -906,8 +906,13 @@ async def parse_upload_batch(
         raise HTTPException(status_code=400, detail="Upload the Batch API output file (.jsonl).")
     try:
         text = (await file.read()).decode("utf-8", errors="replace")
+        from starlette.concurrency import run_in_threadpool
         from uap_analyzer import batch_jsonl_to_parsed
-        parsed, errors = batch_jsonl_to_parsed(text, format_long=format_json)
+        # CPU-heavy conversion runs in the threadpool — inside this async handler
+        # it would otherwise block the event loop and the whole server looks frozen.
+        parsed, errors = await run_in_threadpool(
+            batch_jsonl_to_parsed, text, format_long=format_json,
+        )
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Could not read batch output: {e}")
@@ -917,7 +922,7 @@ async def parse_upload_batch(
             detail="No parseable responses in the file. "
                    + (f"First error: {errors[0]}" if errors else "Is this a Batch API output .jsonl?"),
         )
-    df = parsing_service.parsed_responses_to_df(parsed)
+    df = await run_in_threadpool(parsing_service.parsed_responses_to_df, parsed)
     state.parsed_responses = parsed
     state.parsed_df = df
     return {
@@ -926,7 +931,10 @@ async def parse_upload_batch(
         "n_total": len(parsed) + len(errors),
         "n_failed": len(errors),
         "errors": errors[:10],
-        "data": df_to_json(df, max_rows=2000),
+        # Preview only — 2000 rows x 300+ parsed columns is a 30 MB JSON payload
+        # that stalls the browser. Full data stays in the session (SCU, the
+        # 'parsed' analysis source and /api/parse/export all use it).
+        "data": df_to_json(df, max_rows=500),
     }
 
 

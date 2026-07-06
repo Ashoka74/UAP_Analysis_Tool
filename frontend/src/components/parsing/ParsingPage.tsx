@@ -66,6 +66,7 @@ export function ParsingPage() {
   const [result, setResult] = useState<ParseRunResponse | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('Loading raw dataset...');
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,6 +150,7 @@ export function ParsingPage() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setLoadingMsg('Loading raw dataset...');
     setLoading(true);
     setError(null);
     setResult(null);
@@ -183,6 +185,7 @@ export function ParsingPage() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    setLoadingMsg(`Importing batch results (${(file.size / 1e6).toFixed(0)} MB) — converting, pruning and padding every record; large files can take a minute…`);
     setLoading(true);
     setError(null);
     try {
@@ -284,7 +287,7 @@ export function ParsingPage() {
         </div>
       )}
 
-      {loading && <LoadingSpinner text="Loading raw dataset..." />}
+      {loading && <LoadingSpinner text={loadingMsg} />}
 
       {!source && !loading && (
         <Panel title="LLM Feature Extraction">
