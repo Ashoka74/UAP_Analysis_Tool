@@ -1769,7 +1769,10 @@ class UAPParser:
         parser.process_descriptions(texts, FORMAT_LONG)
     """
 
-    _BATCH_CHUNK = 50_000   # OpenAI Batch API hard limit per job
+    _BATCH_CHUNK = 50_000   # OpenAI Batch API hard limit per job (requests)
+    # Input-file byte cap is 209,715,200 (200 MiB); flush a chunk at 190 MiB
+    # so the last buffered line can never push a file over the limit.
+    _BATCH_MAX_BYTES = 190 * 1024 * 1024
 
     def __init__(
         self,
@@ -1842,6 +1845,13 @@ class UAPParser:
 
     def _build_messages(self, description: str, format_long) -> list:
         fmt = format_long if isinstance(format_long, str) else json.dumps(format_long)
+        # Compact-normalize the template: it is embedded in EVERY request, so
+        # pretty-print whitespace multiplies into real token cost and batch
+        # input-file bytes (the Batch API caps files at ~200 MiB).
+        try:
+            fmt = json.dumps(json.loads(fmt), separators=(",", ":"), ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass
         return [
             {"role": "system", "content": (
                 "You are a structured-data extraction assistant. "
@@ -1917,27 +1927,29 @@ class UAPParser:
     # ── OpenAI Batch API ──────────────────────────────────────────────────
 
     def _submit_batch_openai(self, descriptions: list[str], format_long) -> list[str]:
-        """Upload requests in 50k chunks and return list of batch IDs."""
+        """Upload requests split into multiple batch jobs, capped by BOTH the
+        50k-requests-per-job limit and the ~200 MiB input-file byte limit.
+
+        Every request line embeds the full schema template, so large datasets
+        hit the byte cap long before the request cap (e.g. 9.5k reports × a
+        ~42 KB template ≈ 400 MB → "batch input file is larger than the
+        209715200 maximum"). Requests are buffered and flushed into a new batch
+        job whenever adding a line would cross either cap. custom_id stays the
+        GLOBAL row index, so multi-batch results reassemble transparently.
+        Returns the list of batch IDs (the checkpoint stores them all)."""
         import io as _io
-        batch_ids = []
-        for start in range(0, len(descriptions), self._BATCH_CHUNK):
-            chunk = descriptions[start : start + self._BATCH_CHUNK]
-            lines = [
-                json.dumps({
-                    "custom_id": str(start + i),
-                    "method":    "POST",
-                    "url":       "/v1/chat/completions",
-                    "body": {
-                        "model":           self.model,
-                        "response_format": {"type": "json_object"},
-                        "messages":        self._build_messages(desc, format_long),
-                    },
-                })
-                for i, desc in enumerate(chunk)
-            ]
-            content  = "\n".join(lines).encode("utf-8")
+        batch_ids: list[str] = []
+        buf: list[bytes] = []
+        buf_bytes = 0
+        chunk_start = 0   # global index of the first request in the buffer
+
+        def _flush(end_idx: int) -> None:
+            nonlocal buf, buf_bytes, chunk_start
+            if not buf:
+                return
+            content = b"\n".join(buf)
             uploaded = self.client.files.create(
-                file=(f"batch_{start}.jsonl", _io.BytesIO(content), "application/jsonl"),
+                file=(f"batch_{chunk_start}.jsonl", _io.BytesIO(content), "application/jsonl"),
                 purpose="batch",
             )
             batch = self.client.batches.create(
@@ -1947,9 +1959,29 @@ class UAPParser:
             )
             batch_ids.append(batch.id)
             logging.info(
-                f"Submitted batch {batch.id} for chunk "
-                f"[{start}:{start + len(chunk)}] ({len(chunk)} requests)"
+                f"Submitted batch {batch.id} for chunk [{chunk_start}:{end_idx}] "
+                f"({len(buf)} requests, {len(content) / 1_048_576:.1f} MiB)"
             )
+            buf, buf_bytes = [], 0
+            chunk_start = end_idx
+
+        for i, desc in enumerate(descriptions):
+            line = json.dumps({
+                "custom_id": str(i),
+                "method":    "POST",
+                "url":       "/v1/chat/completions",
+                "body": {
+                    "model":           self.model,
+                    "response_format": {"type": "json_object"},
+                    "messages":        self._build_messages(desc, format_long),
+                },
+            }).encode("utf-8")
+            if buf and (buf_bytes + len(line) + 1 > self._BATCH_MAX_BYTES
+                        or len(buf) >= self._BATCH_CHUNK):
+                _flush(i)
+            buf.append(line)
+            buf_bytes += len(line) + 1
+        _flush(len(descriptions))
         return batch_ids
 
     def _poll_and_collect(self, batch_ids: list[str], descriptions: list[str]) -> None:
