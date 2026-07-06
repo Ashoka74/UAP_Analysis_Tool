@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from uap_analyzer import UAPParser, UAPAnalyzer, UAPVisualizer, cramers_v
+from uap_analyzer import UAPParser, UAPAnalyzer, UAPVisualizer, cramers_v, get_embed_model
 # import ChartGen
 # from ChartGen import ChartGPT
 from Levenshtein import distance
@@ -1192,6 +1192,22 @@ def analyze_and_predict(data, analyzers, col_names, clusters):
 
 from config import API_KEY, GEMINI_KEY, FORMAT_LONG
 
+# Resolve LLM keys used for cluster naming. The committed config values are blank
+# — the real keys live in .streamlit/secrets.toml (same source parsing.py /
+# rag_search.py read): OPENAI_KEY, GEMINI_KEY, DEEPSEEK_KEY.
+import os as _os
+def _secret(name, default=""):
+    try:
+        if hasattr(st, "secrets") and name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return default
+
+OPENAI_KEY   = _secret("OPENAI_KEY")   or _os.environ.get("OPENAI_API_KEY") or API_KEY
+GEMINI_KEY   = _secret("GEMINI_KEY")   or _os.environ.get("GEMINI_API_KEY", "") or GEMINI_KEY
+DEEPSEEK_KEY = _secret("DEEPSEEK_KEY") or _os.environ.get("DEEPSEEK_API_KEY", "")
+
 with torch.no_grad():
     torch.cuda.empty_cache()
 
@@ -1253,24 +1269,178 @@ else:
 # Gemini Q&A over a column moved to the RAG search page (rag_search.py).
 st.session_state['stage'] = 1
 
+# ── Embed Column & Save HDF5 ───────────────────────────────────────────────
+st.divider()
+with st.expander("🧬 Compute Embeddings → HDF5", expanded=False):
+    st.markdown(
+        "Batch-encode a text column with `microsoft/harrier-oss-v1-0.6b` "
+        "and download the full DataFrame (with an added `embeddings` column) as an `.h5` file."
+    )
+
+    _embed_src_opts = []
+    _embed_session_df = st.session_state.get("parsed_responses")
+    if isinstance(_embed_session_df, pd.DataFrame) and not _embed_session_df.empty:
+        _embed_src_opts.append("Loaded dataset (current session)")
+    _embed_src_opts.append("Upload CSV / HDF5")
+
+    _embed_src = st.radio("Data source", _embed_src_opts, horizontal=True, key="embed_src")
+
+    _embed_df = None
+    if _embed_src == "Loaded dataset (current session)":
+        _embed_df = _embed_session_df
+    else:
+        _embed_upload = st.file_uploader(
+            "Upload CSV or HDF5 (.h5)", type=["csv", "h5"], key="embed_upload"
+        )
+        if _embed_upload is not None:
+            if _embed_upload.name.endswith(".h5"):
+                _embed_h5_key_in = st.text_input("HDF5 key to read", value="df", key="embed_h5_key_in")
+                import tempfile as _tmp_in_mod
+                with _tmp_in_mod.NamedTemporaryFile(suffix=".h5", delete=False) as _tmp_in:
+                    _tmp_in.write(_embed_upload.read())
+                    _embed_tmp_path = _tmp_in.name
+                try:
+                    _embed_df = pd.read_hdf(_embed_tmp_path, key=_embed_h5_key_in)
+                except Exception as _e:
+                    st.error(f"Could not read HDF5: {_e}")
+            else:
+                _embed_df = pd.read_csv(_embed_upload)
+
+    if _embed_df is not None:
+        st.caption(f"{len(_embed_df):,} rows × {len(_embed_df.columns)} columns")
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            _embed_col = st.selectbox("Column to embed", _embed_df.columns, key="embed_col")
+        with col_e2:
+            _embed_prompt = st.selectbox(
+                "Prompt type",
+                ["none (document)", "web_search_query"],
+                key="embed_prompt",
+                help="Use 'web_search_query' for short queries; 'none (document)' for passage text.",
+            )
+        col_e3, col_e4 = st.columns(2)
+        with col_e3:
+            _embed_batch = st.slider("Batch size", 16, 512, 256, step=16, key="embed_batch")
+        with col_e4:
+            _embed_out_key = st.text_input("HDF5 key", value="df", key="embed_out_key")
+        _embed_out_name = st.text_input(
+            "Output filename", value="embeddings_output.h5", key="embed_out_name"
+        )
+
+        if st.button("Compute Embeddings", key="btn_compute_embed"):
+            import tempfile as _tmp_out_mod
+            texts = _embed_df[_embed_col].fillna("").astype(str).tolist()
+            _is_query = _embed_prompt == "web_search_query"
+            with st.status(
+                f"Encoding {len(texts):,} texts…", expanded=True
+            ) as _embed_stat:
+                import numpy as _np
+                from stqdm import stqdm as _stqdm
+                _batches = [texts[i:i + _embed_batch] for i in range(0, len(texts), _embed_batch)]
+                _all_embs = []
+                for _batch in _stqdm(_batches, desc=f"Encoding ({len(texts):,} texts, batch={_embed_batch})"):
+                    with torch.no_grad():
+                        _encode = get_embed_model().encode_query if _is_query else get_embed_model().encode_document
+                        _all_embs.append(_encode(_batch, show_progress_bar=False))
+                _embeddings = _np.vstack(_all_embs)
+                _out_df = _embed_df.copy()
+                _out_df["embeddings"] = _embeddings.tolist()
+                with _tmp_out_mod.NamedTemporaryFile(suffix=".h5", delete=False) as _out_tmp:
+                    _out_path = _out_tmp.name
+                _out_df.to_hdf(_out_path, key=_embed_out_key, mode="w")
+                with open(_out_path, "rb") as _fh:
+                    _h5_bytes = _fh.read()
+                _embed_stat.update(
+                    label=f"Done — {len(texts):,} rows, dim {_embeddings.shape[1]}",
+                    state="complete",
+                    expanded=False,
+                )
+            st.success(f"Embedding shape: {_embeddings.shape}")
+            st.download_button(
+                label=f"Download {_embed_out_name}",
+                data=_h5_bytes,
+                file_name=_embed_out_name,
+                mime="application/octet-stream",
+                key="dl_embed_h5",
+            )
+
 # Add enhanced visualization toggle
 with st.expander("🚀 Enhanced Visualization Options", expanded=False):
     use_interactive_viz = st.checkbox("Use Interactive Visualizations", value=True, help="Enable modern interactive charts with better performance")
     show_data_profile = st.checkbox("Show Data Profile", value=True, help="Display intelligent data analysis before filtering")
     enable_performance_mode = st.checkbox("Performance Mode", value=True, help="Enable smart sampling for large datasets")
 
-# TF-IDF cluster naming — default OFF. When ON, clusters get human-readable
-# names derived from their top TF-IDF terms and near-duplicate names are
-# merged. When OFF, clusters keep their numeric HDBSCAN ids and XGBoost
-# downstream runs against the raw labels.
-enable_tfidf_clusters = st.toggle(
-    "Enable TF-IDF cluster naming + merging",
-    value=False,
-    key="enable_tfidf_clusters",
-    help="When off, clusters are labeled 'Cluster N' and HDBSCAN labels are "
-         "passed straight to XGBoost. When on, top TF-IDF terms name each "
-         "cluster and near-duplicate names are merged (slower).",
+# Cluster naming — default "LLM labels": samples ~30 reports per cluster and
+# sends every cluster to an LLM in one go for distinct, human-readable labels
+# (≤6 words), falling back to TF-IDF then numeric if no OPENAI_KEY is set.
+# "TF-IDF keywords" is the legacy keyword naming. "Numeric" keeps the raw HDBSCAN
+# ids (no API cost) so XGBoost downstream runs against the raw labels.
+cluster_naming_mode = st.radio(
+    "Cluster naming",
+    ["LLM labels (sample → LLM)", "Numeric (Cluster N)", "TF-IDF keywords"],
+    index=0,
+    horizontal=True,
+    key="cluster_naming_mode",
+    help="LLM labels (default): ~30 sampled reports per cluster are sent to an "
+         "LLM in a single request so it assigns distinct ≤6-word names (needs "
+         "OPENAI_KEY in .streamlit/secrets.toml; falls back to TF-IDF then "
+         "numeric). Numeric: clusters are 'Cluster N' and HDBSCAN labels go "
+         "straight to XGBoost (no API). TF-IDF: top keywords name each cluster. "
+         "The first and last also merge near-duplicate names.",
 )
+# Back-compat alias used by the processing loop below.
+enable_tfidf_clusters = cluster_naming_mode.startswith("TF-IDF")
+
+# Dimensionality of the UMAP space HDBSCAN clusters in. Default 10: clustering on
+# ~10-D (rather than the 2-D scatter) preserves more structure for cleaner
+# clusters, and — with cuML installed — enables GPU HDBSCAN on large datasets
+# (the GPU path needs dim > 5 AND > 100k rows). The 2-D plot is computed
+# separately, so on-screen adjacency may not match the cluster labels. Set to 2
+# to cluster directly on the 2-D viz embedding (legacy behaviour).
+cluster_dims = int(st.number_input(
+    "Clustering dimensions (UMAP)",
+    min_value=2, max_value=50, value=10, step=1,
+    key="cluster_dims",
+    help="Dimensions of the UMAP space HDBSCAN clusters in. ~10 preserves more "
+         "structure than the 2-D scatter for cleaner clusters and enables the "
+         "cuML GPU HDBSCAN path on large datasets (needs >5 dims and >100k rows). "
+         "The 2-D plot is built separately, so on-screen adjacency may not match "
+         "cluster labels. Set to 2 for the legacy 2-D clustering behaviour.",
+))
+
+# LLM provider/model for cluster naming (Google = Gemini, like rag_search.py).
+# Keys come from .streamlit/secrets.toml (OPENAI_KEY / GEMINI_KEY / DEEPSEEK_KEY).
+# Only shown when "LLM labels" naming is selected.
+_LLM_NAMING_PROVIDERS = {
+    "OpenAI":   {"key": OPENAI_KEY,   "provider": "openai",
+                 "models": ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"]},
+    "Google":   {"key": GEMINI_KEY,   "provider": "google",
+                 "models": ["models/gemini-3.1-pro-preview"]},
+    "DeepSeek": {"key": DEEPSEEK_KEY, "provider": "deepseek",
+                 "models": ["deepseek-v4-flash", "deepseek-v4-pro"]},
+}
+llm_naming_provider = "OpenAI"
+llm_naming_model = "gpt-4o-mini"
+if cluster_naming_mode.startswith("LLM"):
+    _pc1, _pc2 = st.columns(2)
+    with _pc1:
+        llm_naming_provider = st.selectbox(
+            "Naming LLM provider", list(_LLM_NAMING_PROVIDERS.keys()),
+            key="cluster_llm_provider",
+            help="Provider used to label clusters. Google = Gemini. Keys are read "
+                 "from .streamlit/secrets.toml (OPENAI_KEY / GEMINI_KEY / DEEPSEEK_KEY).",
+        )
+    with _pc2:
+        # Provider in the key so switching providers swaps the model list cleanly.
+        llm_naming_model = st.selectbox(
+            "Model", _LLM_NAMING_PROVIDERS[llm_naming_provider]["models"],
+            key=f"cluster_llm_model_{llm_naming_provider}",
+        )
+    if not _LLM_NAMING_PROVIDERS[llm_naming_provider]["key"]:
+        st.warning(
+            f"No API key for {llm_naming_provider} in .streamlit/secrets.toml — "
+            "cluster naming will fall back to TF-IDF, then numeric."
+        )
 
 # Categorical association explorer — runs directly on the parsed DataFrame,
 # independent of the embedding/cluster pipeline below.
@@ -1333,17 +1503,77 @@ if st.session_state['stage'] > 0 :
                 analyzers = []
                 col_names = []
                 clusters = {}
+                # Stage-level progress across all selected columns. Embeddings,
+                # UMAP and HDBSCAN are each single opaque calls (no per-iteration
+                # hook, and embeddings runs in a multi-process pool), so the bar
+                # advances one notch per completed stage rather than within a stage.
+                _stages_per_col = 5 if cluster_dims > 2 else 4  # embed, viz-umap, [clust-umap], hdbscan, naming
+                _total_steps = max(1, len(columns_to_analyze) * _stages_per_col)
+                _prog = {"n": 0}
+                _bar = st.progress(0.0, text="Starting analysis…")
+                def _set(msg):
+                    # Fill reflects completed stages; text names the stage now running.
+                    _bar.progress(min(1.0, _prog["n"] / _total_steps), text=msg)
                 for column in columns_to_analyze:
                     with torch.no_grad():    
                         with st.status(f"Processing {column}", expanded=True) as status:
                             analyzer = UAPAnalyzer(st.session_state['parsed_responses'], column)
+                            _set(f"{column}: extracting embeddings…")
                             st.write(f"Processing {column}...")
                             analyzer.preprocess_data(top_n=32)
-                            st.write("Reducing dimensionality...")
+                            _prog["n"] += 1
+                            _set(f"{column}: UMAP → 2-D (visualization)…")
+                            st.write("Reducing dimensionality (2-D viz)...")
                             analyzer.reduce_dimensionality(method='UMAP', n_components=2, n_neighbors=15, min_dist=0.1)
+                            _prog["n"] += 1
+                            if cluster_dims > 2:
+                                _set(f"{column}: UMAP → {cluster_dims}-D (clustering)…")
+                                st.write(f"Reducing to {cluster_dims}-D for clustering...")
+                                analyzer.reduce_for_clustering(method='UMAP', n_components=cluster_dims, n_neighbors=15, min_dist=0.0)
+                                _prog["n"] += 1
+                            _set(f"{column}: HDBSCAN clustering…")
                             st.write("Clustering data...")
                             analyzer.cluster_data(method='HDBSCAN', min_cluster_size=15)
-                            if enable_tfidf_clusters:
+                            _prog["n"] += 1
+                            _set(f"{column}: naming clusters…")
+                            if cluster_naming_mode.startswith("LLM"):
+                                _prov_cfg = _LLM_NAMING_PROVIDERS[llm_naming_provider]
+                                if not _prov_cfg["key"]:
+                                    st.warning(
+                                        f"No {llm_naming_provider} key in "
+                                        ".streamlit/secrets.toml — falling back to "
+                                        "TF-IDF keyword names."
+                                    )
+                                st.write(f"Naming clusters with {llm_naming_provider} "
+                                         f"({llm_naming_model}, sampling reports)...")
+                                analyzer.get_llm_clusters(
+                                    sample_size=30, max_words=6,
+                                    api_key=_prov_cfg["key"],
+                                    provider=_prov_cfg["provider"],
+                                    model=llm_naming_model,
+                                )
+                                _nm = getattr(analyzer, "naming_method", None)
+                                if _nm == "llm":
+                                    st.write(f"✅ Clusters named by {llm_naming_provider}.")
+                                elif _nm == "tfidf_fallback":
+                                    st.warning(
+                                        "LLM naming unavailable — using TF-IDF keyword "
+                                        f"names instead. ({getattr(analyzer, 'naming_error', '') or 'see logs'})"
+                                    )
+                                elif _nm == "numeric_fallback":
+                                    st.warning("LLM and TF-IDF naming both failed — using numeric names.")
+                                elif _nm == "empty":
+                                    st.warning(
+                                        f"HDBSCAN found no clusters in **{column}** — every point was "
+                                        "labeled noise, so there is nothing to name. All rows are "
+                                        "marked 'Noise' for this column. Try a lower "
+                                        "`min_cluster_size`, more rows, or different UMAP settings."
+                                    )
+                                clusters[column] = analyzer.merge_similar_clusters(
+                                    cluster_terms=analyzer.__dict__['cluster_terms'],
+                                    cluster_labels=analyzer.__dict__['cluster_labels'],
+                                )
+                            elif enable_tfidf_clusters:
                                 analyzer.get_tf_idf_clusters(top_n=3)
                                 st.write("Naming clusters...")
                                 clusters[column] = analyzer.merge_similar_clusters(
@@ -1357,6 +1587,7 @@ if st.session_state['stage'] > 0 :
                                     [f"Cluster {cid}" for cid in np.unique(_labels) if cid != -1]
                                 )
                                 clusters[column] = list(_labels)
+                            _prog["n"] += 1
                             analyzers.append(analyzer)
                             col_names.append(column)
                             
@@ -1370,6 +1601,7 @@ if st.session_state['stage'] > 0 :
                             # )#.to_html(full_html=False, include_plotlyjs='cdn')
                             # st.pyplot(fig.savefig())
                             status.update(label=f"Processing {column} complete", expanded=False)
+                _bar.progress(1.0, text="Analysis complete ✅")
                 st.session_state['analyzers'] = analyzers
                 st.session_state['col_names'] = col_names
                 st.session_state['clusters'] = clusters

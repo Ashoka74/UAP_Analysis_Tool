@@ -680,49 +680,76 @@ class UAPAnalyzer:
                     used_labels.append(clean)
         return result
 
-    def cluster_levenshtein(self, cluster_terms, cluster_labels, char_diff_threshold=3):
-        from Levenshtein import distance  # Make sure to import the correct distance function
+    def _terms_to_row_labels(self, cluster_terms, cluster_labels, merge_map):
+        """Per-row string labels from per-cluster terms + a term-index merge map.
 
+        ``cluster_terms`` is positional over the SORTED non-noise cluster ids
+        (the shape produced by get_tf_idf_clusters / get_llm_clusters); HDBSCAN
+        noise rows (label -1) become "Noise" instead of silently wrapping to
+        ``cluster_terms[-1]`` (the last cluster's name)."""
+        terms = list(cluster_terms)
+        labels = np.asarray(cluster_labels)
+        sorted_ids = sorted(int(c) for c in np.unique(labels) if c != -1)
+        id_to_pos = {cid: i for i, cid in enumerate(sorted_ids)}
+
+        def resolve(pos):
+            # merge chains always point to a smaller index -> terminates
+            while pos in merge_map:
+                pos = merge_map[pos]
+            return pos
+
+        out = []
+        for l in labels:
+            l = int(l)
+            pos = id_to_pos.get(l)
+            if l == -1 or pos is None or pos >= len(terms):
+                out.append("Noise")
+            else:
+                out.append(str(terms[resolve(pos)]))
+        return out
+
+    def cluster_levenshtein(self, cluster_terms, cluster_labels, char_diff_threshold=3):
+        from Levenshtein import distance
+
+        terms = list(cluster_terms)
+        # No non-noise clusters (all rows HDBSCAN noise) -> nothing to merge.
+        if len(terms) == 0:
+            return ["Noise"] * len(cluster_labels)
         merge_map = {}
-        # Iterate over term pairs and decide on merging based on the distance
-        for idx, term1 in enumerate(cluster_terms):
-            for jdx, term2 in enumerate(cluster_terms):
-                if idx < jdx and distance(term1, term2) <= char_diff_threshold:  
-                    labels_to_merge = [label for label, term_index in enumerate(cluster_labels) if term_index == jdx]
-                    for label in labels_to_merge:
-                        merge_map[label] = idx  # Map the label to use the term index of term1
+        for idx, term1 in enumerate(terms):
+            for jdx, term2 in enumerate(terms):
+                if idx < jdx and jdx not in merge_map and distance(term1, term2) <= char_diff_threshold:
+                    merge_map[jdx] = idx   # term-index -> term-index
                     logging.info(f"Merging '{term2}' into '{term1}'")
                     st.write(f"Merging '{term2}' into '{term1}'")
-        # Update the cluster labels
-        updated_cluster_labels = [merge_map.get(label, label) for label in cluster_labels]
-        # Update string labels to reflect merged labels
-        updated_string_labels = [cluster_terms[label] for label in updated_cluster_labels]
-        return updated_string_labels
+        return self._terms_to_row_labels(terms, cluster_labels, merge_map)
 
     def cluster_cosine(self, cluster_terms, cluster_labels, similarity_threshold):
         from sklearn.metrics.pairwise import cosine_similarity
 
-        cluster_terms_embeddings = get_embed_model().encode_document(cluster_terms)
-        # Compute cosine similarity matrix in a vectorized form
+        terms = list(cluster_terms)
+        # Zero non-noise clusters: encoding [] crashes cosine_similarity — and
+        # there is nothing to merge anyway. One cluster: nothing to merge either.
+        if len(terms) == 0:
+            return ["Noise"] * len(cluster_labels)
+        if len(terms) == 1:
+            return self._terms_to_row_labels(terms, cluster_labels, {})
+
+        cluster_terms_embeddings = get_embed_model().encode_document(terms)
         cos_sim_matrix = cosine_similarity(cluster_terms_embeddings, cluster_terms_embeddings)
 
+        # merge_map maps term-index -> term-index (jdx merged into idx). The old
+        # code keyed this by ROW position but looked it up by cluster id, so
+        # merges mostly never applied (and could corrupt labels on collisions).
         merge_map = {}
-        n_terms = len(cluster_terms)
-        # Iterate only over upper triangular matrix excluding diagonal to avoid redundant computations and self-comparison
+        n_terms = len(terms)
         for idx in range(n_terms):
             for jdx in range(idx + 1, n_terms):
-                if cos_sim_matrix[idx, jdx] >= similarity_threshold:
-                    labels_to_merge = [label for label, term_index in enumerate(cluster_labels) if term_index == jdx]
-                    for label in labels_to_merge:
-                        merge_map[label] = idx
-                    st.write(f"Merging '{cluster_terms[jdx]}' into '{cluster_terms[idx]}'")
-                    logging.info(f"Merging '{cluster_terms[jdx]}' into '{cluster_terms[idx]}'")
-        # Update the cluster labels
-        updated_cluster_labels = [merge_map.get(label, label) for label in cluster_labels]
-        # Update string labels to reflect merged labels
-        updated_string_labels = [cluster_terms[label] for label in updated_cluster_labels]
-        # make a dataframe with index, cluster label and cluster term
-        return updated_string_labels
+                if jdx not in merge_map and cos_sim_matrix[idx, jdx] >= similarity_threshold:
+                    merge_map[jdx] = idx
+                    st.write(f"Merging '{terms[jdx]}' into '{terms[idx]}'")
+                    logging.info(f"Merging '{terms[jdx]}' into '{terms[idx]}'")
+        return self._terms_to_row_labels(terms, cluster_labels, merge_map)
 
     def merge_similar_clusters(self, cluster_terms, cluster_labels, distance_type='cosine', char_diff_threshold=3, similarity_threshold=0.92):
         if distance_type == 'levenshtein':
