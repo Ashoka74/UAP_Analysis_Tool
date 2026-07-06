@@ -1632,6 +1632,79 @@ def schema_prune(record, template) -> tuple[dict, dict]:
     return nested, info
 
 
+def batch_output_to_responses(jsonl_text: str, descriptions: list | None = None) -> tuple[dict, list]:
+    """Convert a downloaded OpenAI Batch API output .jsonl into the raw
+    ``{key: content}`` responses dict the parallel path produces.
+
+    Each line is ``{"custom_id": "<row index>", "response": {"body":
+    {"choices": [{"message": {"content": ...}}]}}, "error": ...}`` — custom_id
+    is the index the app assigned at submission (see _submit_batch_openai).
+    When ``descriptions`` (the original submitted texts, in order) is provided,
+    keys are re-mapped to the input text — byte-identical to parallel parsing,
+    which keeps carry-through joins working. Otherwise keys are ``batch_<id>``.
+    Returns (responses, errors)."""
+    responses, errors = {}, []
+    for ln in jsonl_text.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError as e:
+            errors.append(f"unparseable line: {e}")
+            continue
+        cid = rec.get("custom_id")
+        choices = ((rec.get("response") or {}).get("body") or {}).get("choices") or []
+        content = choices[0].get("message", {}).get("content") if choices else None
+        if not content:
+            err = (rec.get("error") or {}).get("message") or "no choices in response"
+            errors.append(f"custom_id {cid}: {err}")
+            continue
+        key = None
+        if descriptions is not None:
+            try:
+                i = int(cid)
+                if 0 <= i < len(descriptions):
+                    key = descriptions[i]
+            except (TypeError, ValueError):
+                pass
+        responses[key if key is not None else f"batch_{cid}"] = content
+    return responses, errors
+
+
+def batch_jsonl_to_parsed(jsonl_text: str, format_long=None,
+                          descriptions: list | None = None,
+                          strict_schema: bool = True) -> tuple[dict, list]:
+    """OpenAI Batch output .jsonl → parsed responses in the exact shape of
+    ``UAPParser.parse_responses`` on a parallel run: JSON-extracted, then (when
+    the schema template is known) rescue-then-pruned and schema-completed.
+    Returns (parsed_responses, errors)."""
+    responses, errors = batch_output_to_responses(jsonl_text, descriptions)
+    template = format_long
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except (json.JSONDecodeError, TypeError):
+            template = None
+    if not isinstance(template, dict) or not template:
+        template = None
+
+    parsed = {}
+    for k, v in responses.items():
+        result = _extract_json(v)
+        if result is None:
+            errors.append(f"could not extract JSON for key {str(k)[:60]!r}")
+            continue
+        if template:
+            if strict_schema:
+                result, _info = schema_prune(result, template)
+            result = schema_complete(result, template)
+        parsed[k] = result
+    logging.info(f"batch_jsonl_to_parsed: {len(parsed)} parsed, {len(errors)} errors"
+                 + ("  (schema-completed/pruned)" if template else ""))
+    return parsed, errors
+
+
 class FatalParseError(RuntimeError):
     """A non-retryable, run-fatal API failure — an unfunded/empty account
     (``insufficient_quota``), a bad key (401 / ``invalid_api_key``), or a

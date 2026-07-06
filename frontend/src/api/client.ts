@@ -166,6 +166,23 @@ export const api = {
     return request('/parse/use-loaded', { method: 'POST' });
   },
 
+  // Import a downloaded OpenAI Batch API output (.jsonl) as parsed data —
+  // lands in the session exactly like a parallel parse run.
+  uploadBatchOutput(file: File, formatJson?: string): Promise<ParseRunResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    if (formatJson) form.append('format_json', formatJson);
+    return fetch(`${BASE}/parse/upload-batch`, { method: 'POST', body: form }).then(
+      async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(body.detail || `Batch import failed: ${res.status}`);
+        }
+        return res.json();
+      }
+    );
+  },
+
   estimateParse(
     columns: string[],
     formatJson: string,

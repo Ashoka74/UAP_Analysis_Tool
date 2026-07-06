@@ -177,6 +177,26 @@ export function ParsingPage() {
     }
   };
 
+  // Import a downloaded OpenAI Batch API output (.jsonl) — lands in the session
+  // exactly like a parallel parse run (SCU normalization etc. work identically).
+  const handleBatchImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const fmt = mergedFormat && mergedFormat.trim() !== '{}' ? mergedFormat : undefined;
+      const res = await api.uploadBatchOutput(file, fmt);
+      setResult(res);
+      setParsedReady(res.n_ok > 0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Batch import failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggle = (list: string[], v: string) =>
     list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 
@@ -242,6 +262,14 @@ export function ParsingPage() {
             Use loaded dataset
           </button>
         )}
+        <label
+          title="Import a downloaded OpenAI Batch API output file (.jsonl) — results land exactly like a live parallel parse (select your schema first so pruning/padding apply)"
+          className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-accent hover:bg-elevated"
+        >
+          <FileSearch className="h-4 w-4 text-accent" />
+          Import Batch Results (.jsonl)
+          <input type="file" accept=".jsonl,.json" onChange={handleBatchImport} className="hidden" />
+        </label>
         {source && (
           <div className="ml-auto flex items-center gap-2 text-xs text-text-muted">
             <FileSearch className="h-4 w-4" />

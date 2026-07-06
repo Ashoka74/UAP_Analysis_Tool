@@ -890,6 +890,46 @@ def parse_use_loaded(state: SessionState = Depends(get_session)):
     }
 
 
+@app.post("/api/parse/upload-batch")
+async def parse_upload_batch(
+    file: UploadFile = File(...),
+    format_json: str | None = Form(None),
+    state: SessionState = Depends(get_session),
+):
+    """Import a downloaded OpenAI Batch API output (.jsonl) as parsed data —
+    same session shape as a parallel /api/parse/run (parsed_responses +
+    parsed_df), so SCU normalization and the 'parsed' analysis source work
+    identically. ``format_json`` (the extraction schema) enables the same
+    rescue-then-prune + schema-complete post-processing as live parsing."""
+    name = (file.filename or "").lower()
+    if not name.endswith((".jsonl", ".json")):
+        raise HTTPException(status_code=400, detail="Upload the Batch API output file (.jsonl).")
+    try:
+        text = (await file.read()).decode("utf-8", errors="replace")
+        from uap_analyzer import batch_jsonl_to_parsed
+        parsed, errors = batch_jsonl_to_parsed(text, format_long=format_json)
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=400, detail=f"Could not read batch output: {e}")
+    if not parsed:
+        raise HTTPException(
+            status_code=400,
+            detail="No parseable responses in the file. "
+                   + (f"First error: {errors[0]}" if errors else "Is this a Batch API output .jsonl?"),
+        )
+    df = parsing_service.parsed_responses_to_df(parsed)
+    state.parsed_responses = parsed
+    state.parsed_df = df
+    return {
+        "status": "ok",
+        "n_ok": len(parsed),
+        "n_total": len(parsed) + len(errors),
+        "n_failed": len(errors),
+        "errors": errors[:10],
+        "data": df_to_json(df, max_rows=2000),
+    }
+
+
 @app.post("/api/parse/estimate")
 def parse_estimate(req: ParseEstimateRequest, state: SessionState = Depends(get_session)):
     if state.parse_source_df is None:

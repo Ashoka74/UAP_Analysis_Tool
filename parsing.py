@@ -2491,6 +2491,52 @@ if unparsed is not None:
                             st.dataframe(responses_df)
                             st.session_state['parsed_responses_df'] = responses_df.copy()
 
+            # ── Import a manually-downloaded batch output (.jsonl) ────────────
+            # The OpenAI dashboard serves batch results as .jsonl; import it here
+            # to get the exact same session shape as a live parallel parse
+            # (strict prune + schema-complete applied when a schema is selected).
+            st.markdown("**Or import a downloaded batch output file**")
+            _batch_up = st.file_uploader(
+                "OpenAI Batch output (.jsonl / .json) downloaded from the dashboard",
+                type=["jsonl", "json"], key="batch_jsonl_upload",
+            )
+            if _batch_up is not None and st.button("Import batch output", key="batch_jsonl_go"):
+                from uap_analyzer import batch_jsonl_to_parsed
+                try:
+                    _fmt = active_format
+                except NameError:
+                    _fmt = None
+                _descs = st.session_state.get("result")
+                _parsed_b, _errs_b = batch_jsonl_to_parsed(
+                    _batch_up.getvalue().decode("utf-8", errors="replace"),
+                    format_long=_fmt,
+                    descriptions=_descs if isinstance(_descs, list) else None,
+                )
+                if not _parsed_b:
+                    st.error(
+                        "No parseable responses found — is this a Batch API output "
+                        f".jsonl? {('First error: ' + _errs_b[0]) if _errs_b else ''}"
+                    )
+                else:
+                    st.session_state['parsed_responses'] = _parsed_b
+                    responses_df = pd.json_normalize(list(_parsed_b.values()))
+                    responses_df.index = pd.Index(list(_parsed_b.keys()))
+                    responses_df = attach_kept_columns(responses_df)
+                    st.session_state['parsed_responses_df'] = responses_df.copy()
+                    st.success(
+                        f"Imported {len(_parsed_b)} parsed response(s)"
+                        + (f" — {len(_errs_b)} line(s) failed" if _errs_b else "")
+                        + (". Keys re-mapped to the source texts."
+                           if isinstance(_descs, list) else
+                           ". Keyed by batch custom_id (load the source dataset "
+                           "first to re-key by input text and enable carry-through).")
+                    )
+                    if _errs_b:
+                        with st.expander("Import errors (first 10)"):
+                            for _e in _errs_b[:10]:
+                                st.code(_e)
+                    st.dataframe(responses_df.head(50))
+
     # ── Cost estimate ──────────────────────────────────────────────────────────
     descriptions_preview = filtered_data.apply(_build_text, axis=1).dropna().tolist()
     if descriptions_preview:
