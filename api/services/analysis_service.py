@@ -630,10 +630,16 @@ def _xgb_cv_accuracy(x: pd.DataFrame, y: pd.Series, n_classes: int, *, n_splits:
     }
 
 
-def _xgb_quick_fit(x: pd.DataFrame, y: pd.Series, n_classes: int, *,
-                   num_boost_round: int = 40, seed: int = 42) -> dict:
+def _xgb_quick_fit(x: pd.DataFrame, y, n_classes: int, *,
+                   num_boost_round: int = 40, seed: int = 42, dmat=None) -> dict:
     """A fast importance-only fit (no eval/early-stopping) for the permutation and
-    bootstrap resamples — fewer rounds keep the significance pass affordable."""
+    bootstrap resamples — fewer rounds keep the significance pass affordable.
+
+    If ``dmat`` is passed (a label-carrying ``DMatrix`` built once from ``x``),
+    reuse it and only re-stamp the label. The permutation null holds ``x`` fixed
+    and just shuffles ``y``, so this skips re-parsing the DataFrame and
+    re-quantizing the feature bins on every refit — XGBoost caches the quantized
+    matrix on the ``DMatrix`` object, and the label is not part of that cache."""
     import xgboost as xgb
 
     multi = n_classes > 2
@@ -644,8 +650,11 @@ def _xgb_quick_fit(x: pd.DataFrame, y: pd.Series, n_classes: int, *,
     }
     if multi:
         params["num_class"] = n_classes
-    bst = xgb.train(params, xgb.DMatrix(x, label=y, enable_categorical=True),
-                    num_boost_round=num_boost_round, verbose_eval=False)
+    if dmat is None:
+        dmat = xgb.DMatrix(x, label=y, enable_categorical=True)
+    else:
+        dmat.set_info(label=y)
+    bst = xgb.train(params, dmat, num_boost_round=num_boost_round, verbose_eval=False)
     return {k: float(v) for k, v in bst.get_score(importance_type="gain").items()}
 
 
@@ -656,15 +665,20 @@ def _null_importance(x: pd.DataFrame, y: pd.Series, n_classes: int, real_imp: di
     ``(1 + #{null ≥ real}) / (n_perm + 1)`` — small p ⇒ the feature's importance is
     unlikely under no real relationship. Only features actually used (real gain > 0)
     get a p-value; the rest are non-significant by construction."""
+    import xgboost as xgb
+
     rng = np.random.default_rng(seed)
     feats = [f for f in x.columns if real_imp.get(f, 0.0) > 0]
     if not feats:
         return {}
     ge = {f: 0 for f in feats}
     y_arr = y.to_numpy()
+    # x is identical across every permutation — build (and quantize) it once, then
+    # only swap the shuffled label per refit.
+    dmat = xgb.DMatrix(x, label=y_arr, enable_categorical=True)
     for p in range(n_perm):
-        yp = pd.Series(rng.permutation(y_arr), index=y.index)
-        imp = _xgb_quick_fit(x, yp, n_classes, seed=seed + p + 1)
+        yp = rng.permutation(y_arr)
+        imp = _xgb_quick_fit(x, yp, n_classes, seed=seed + p + 1, dmat=dmat)
         for f in feats:
             if imp.get(f, 0.0) >= real_imp[f]:
                 ge[f] += 1

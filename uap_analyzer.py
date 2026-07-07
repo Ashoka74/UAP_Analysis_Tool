@@ -1728,6 +1728,11 @@ _FATAL_API_MARKERS = (
     "incorrect api key", "authenticationerror", "invalid authentication",
     "billing", "account_deactivated", "account deactivated",
     "access terminated", "permissiondeniederror",
+    # DeepSeek's drained-account error (HTTP 402) — NOT a 429; without this a
+    # dead DeepSeek key retries every row to exhaustion, the same storm as
+    # OpenAI's insufficient_quota. DeepSeek concurrency-limit 429s deliberately
+    # stay transient (retry/backoff): they clear as in-flight requests drain.
+    "insufficient balance",
 )
 
 
@@ -1814,7 +1819,21 @@ class UAPParser:
         self.last_errors: list[str] = []   # populated by process_descriptions
 
         if provider == "deepseek":
-            self.client = OpenAI(api_key=api_key, base_url=_DEEPSEEK_BASE)
+            # DeepSeek allows 500 (v4-pro) / 2500 (v4-flash) concurrent requests
+            # per account. httpx's default pool (100 keep-alive connections)
+            # would silently queue anything beyond it, capping real concurrency
+            # regardless of max_workers — so size the pool for the full quota.
+            # timeout=600 s matches DeepSeek's keep-alive window (the server
+            # holds slow requests up to 10 min before inference starts).
+            import httpx
+            self.client = OpenAI(
+                api_key=api_key, base_url=_DEEPSEEK_BASE, timeout=600.0,
+                http_client=httpx.Client(
+                    timeout=600.0,
+                    limits=httpx.Limits(max_connections=512,
+                                        max_keepalive_connections=512),
+                ),
+            )
         else:
             os.environ["OPENAI_API_KEY"] = api_key
             self.client = OpenAI()

@@ -85,3 +85,23 @@ def test_dedupe_keeps_twin_when_canonical_absent():
     # anomaly.flight alone (no radical_flight) must NOT be dropped
     kept, removed = A.dedupe_semantic(["anomaly.flight", "location.country"])
     assert "anomaly.flight" in kept and removed == []
+
+
+def test_quick_fit_dmat_reuse_matches_fresh_build():
+    """_null_importance builds one DMatrix and re-stamps labels per permutation;
+    that path must produce the same importances as a fresh per-fit build."""
+    import numpy as np
+    import pandas as pd
+    import xgboost as xgb
+    from api.services.analysis_service import _xgb_quick_fit
+
+    rng = np.random.RandomState(7)
+    x = pd.DataFrame({f"f{i}": rng.randint(0, 4, 400) for i in range(6)}).astype("category")
+    y = pd.Series(rng.randint(0, 3, 400))
+
+    fresh = _xgb_quick_fit(x, y, 3, seed=11)
+    dmat = xgb.DMatrix(x, label=y, enable_categorical=True)
+    dmat.set_info(label=rng.permutation(y.to_numpy()))   # dirty the label first…
+    dmat.set_info(label=y)                               # …then restore, as the loop does
+    reused = _xgb_quick_fit(x, y, 3, seed=11, dmat=dmat)
+    assert fresh == reused

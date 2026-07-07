@@ -82,3 +82,69 @@ def test_manual_column_map_override():
     out, audit = S.normalize(df, column_map={"craft.size": "object.primary_shape"})
     assert audit["column_mapping"]["craft.size"] == "object.primary_shape"
     assert audit["column_mapping_methods"]["craft.size"] == "manual"
+
+
+# ── Mini-SCU "tunnel" schema — the cheap first-pass funnel ──────────────────
+
+def _leaves(d, pfx=""):
+    out = set()
+    for k, v in d.items():
+        p = f"{pfx}{k}"
+        if isinstance(v, dict):
+            out |= _leaves(v, p + ".")
+        elif isinstance(v, list) and v and isinstance(v[0], dict):
+            out |= _leaves(v[0], p + ".")
+        else:
+            out.add(p)
+    return out
+
+
+def test_mini_scu_is_strict_subset_of_scu_v3():
+    """Mini-SCU is derived from SCU_v3, so every leaf (and its verbatim
+    definition) must exist in SCU_v3 — no invented fields, and a real shrink."""
+    from config import FORMAT_MINI_SCU, FORMAT_SCU_V3
+    mini, v3 = _leaves(FORMAT_MINI_SCU), _leaves(FORMAT_SCU_V3)
+    assert mini < v3, f"MINI leaves outside SCU_v3: {sorted(mini - v3)}"
+    assert len(mini) < len(v3) / 3            # a genuine funnel, not a rename
+    # definitions inherited byte-for-byte (extraction quality must not drift)
+    assert (FORMAT_MINI_SCU["engagement_type"]["occupant_observed"]
+            == FORMAT_SCU_V3["engagement_type"]["occupant_observed"])
+
+
+def test_mini_scu_covers_every_gate_input():
+    """The whole point: a record carrying ONLY Mini-SCU fields, at SCU_v3's
+    native flat paths, must clear the five-criterion gate with no auto-mapping
+    (Mini uses native paths, so nothing needs renaming)."""
+    rec = {
+        "date_time": {"year": 1965, "month": 7, "day": 3, "day_night": "N"},
+        "location": {"country": "US"},
+        "investigation": {"source": "NICAP",
+                          "reports_within_1_month_of_sighting": "Y",
+                          "reports_within_1_year_of_sighting": "Y"},
+        "witness": {"roles": ["Pilot", "Military"]},
+        "craft": {"primary_shape": "Disc"},
+        "performance": {"hypersonic": "Y", "instantaneous_acceleration": "U",
+                        "low_observability": "U", "trans_medium_travel": "U",
+                        "positive_lift": "Y"},
+        "engagement_type": {"interactive_flight": "P", "radical_flight": "S",
+                            "loitering": "", "electronic_transmissions": "",
+                            "interference_weapons": "", "military_intrusions": "",
+                            "occupant_encounter": "", "occupant_observed": "",
+                            "close_approach": "S", "no_engagement": ""},
+        "military": {"military_public": "Military"},
+        "assessment": {"contradictsUap": False, "notes": ""},
+    }
+    out, _ = S.normalize(pd.json_normalize([rec]))
+    assert bool(out["scu_eligible"].iloc[0]) is True
+    for c in ("in_scu_window", "has_core_fields", "has_investigation_channel",
+              "has_credible_witness", "has_anomalous_characterization",
+              "has_engagement_signal", "day_night_resolved", "military_public_known"):
+        assert bool(out[c].iloc[0]), f"{c} not satisfied by Mini-SCU fields"
+
+    # negative control: strip the anomaly + engagement signal -> gate must reject
+    rec2 = json.loads(json.dumps(rec))
+    rec2["craft"]["primary_shape"] = "Unknown"
+    rec2["performance"] = {k: "U" for k in rec["performance"]}
+    rec2["engagement_type"] = {k: "" for k in rec["engagement_type"]}
+    out2, _ = S.normalize(pd.json_normalize([rec2]))
+    assert bool(out2["scu_eligible"].iloc[0]) is False

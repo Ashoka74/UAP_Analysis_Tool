@@ -1274,7 +1274,7 @@ def filter_dataframe_legacy(df: pd.DataFrame) -> pd.DataFrame:
 
 from config import (
     FORMAT_MASTER_SCU_V1,
-    FORMAT_LONG, FORMAT_LONG_XLSX, FORMAT_SCU_V1, FORMAT_SCU_V2, FORMAT_SCU_V3, FORMAT_MERGED, FORMAT_UFOSETI_RU,
+    FORMAT_LONG, FORMAT_LONG_XLSX, FORMAT_MINI_SCU, FORMAT_SCU_V1, FORMAT_SCU_V2, FORMAT_SCU_V3, FORMAT_MERGED, FORMAT_UFOSETI_RU,
     FORMAT_NUFORC, FORMAT_BLUE_BOOK, FORMAT_UK_NATIONAL_ARCHIVES,
     FORMAT_COBEPS_NOTIFICATIONS_PAN, FORMAT_COBEPS_COB_2021,
     FORMAT_GEP, FORMAT_UPDB_NICAP, FORMAT_OVNIBASE, FORMAT_UFOSETI,
@@ -1295,6 +1295,7 @@ DEEPSEEK_KEY = st.secrets.get("DEEPSEEK_KEY", "")
 SCHEMA_FORMATS = {
     "MasterSCU_v1":                    FORMAT_MASTER_SCU_V1,
     "SCU_v1":                          FORMAT_SCU_V1,
+    "Mini-SCU (tunnel)":               FORMAT_MINI_SCU,
     "Default UAP Format":              FORMAT_LONG,
     "SCU Spreadsheet":                 FORMAT_LONG_XLSX,
     "SCU_v2":                          FORMAT_SCU_V2,
@@ -1324,7 +1325,7 @@ SCHEMA_FORMATS = {
 # the schema picker presents them grouped so the right standard is easy to find.
 SCHEMA_FORMAT_GROUPS = {
     "Canonical & SCU": [
-        "MasterSCU_v1", "SCU_v1", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
+        "MasterSCU_v1", "SCU_v1", "Mini-SCU (tunnel)", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
     ],
     "Government & official archives": [
         "Blue Book (USAF)", "UK National Archives",
@@ -1358,6 +1359,13 @@ SCHEMA_FORMAT_ORIGINS = {
         "(types/flags), military, effects, entities (+morphology/tools), "
         "contact, environment, evidence, classification, assessment, scenarios "
         "(ICD-203 intention scoring), investigation, narrative and context.",
+    "Mini-SCU (tunnel)":
+        "The absolute-minimum funnel schema (~27 fields): only what the SCU "
+        "five-criterion eligibility gate reads. Cheap first pass at scale — "
+        "parse everything with this, keep the rows that clear the gate, then "
+        "re-parse only the survivors with SCU_v3 or MasterSCU_v1. Field "
+        "definitions are identical to SCU_v3 (derived from it), so quality "
+        "on the gate fields does not degrade.",
     "SCU_v1":
         "A compact SCU schema — the full SCU_v3 field set minus the "
         "verbose `sightingDetails` narrative block and the all-null `manifest` "
@@ -2379,14 +2387,20 @@ if unparsed is not None:
 
         if exec_mode.startswith("🔄"):
             use_batch   = False
+            # DeepSeek's documented concurrency limits are 500 (v4-pro) /
+            # 2500 (v4-flash) per account — far above OpenAI tier limits. The
+            # HTTP pool is sized to 512, so 500 is the useful ceiling.
+            _workers_cap = 500 if provider == "DeepSeek" else 64
             max_workers = st.slider(
                 "Max parallel workers",
-                min_value=1, max_value=64, value=10, step=1,
+                min_value=1, max_value=_workers_cap, value=10, step=1,
                 help=(
                     "Number of concurrent HTTP requests sent to the API at the same time. "
                     "Higher = faster but you may hit the provider's rate limits. "
                     "OpenAI Tier 1 typically supports ~60 RPM for gpt-4o-mini. "
-                    "DeepSeek has dynamic limits; start at 5-10 and raise if no 429 errors."
+                    "DeepSeek allows 500 concurrent requests on v4-pro and 2500 on "
+                    "v4-flash (account-level); 429s above the limit are retried with "
+                    "back-off, so overshooting slows you down instead of failing."
                 ),
             )
             ckpt_path = st.text_input(

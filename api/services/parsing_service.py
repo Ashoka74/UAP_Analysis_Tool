@@ -22,6 +22,7 @@ from typing import Any, Callable
 _SCHEMA_SPECS: list[tuple[str, str]] = [
     ("MasterSCU_v1", "FORMAT_MASTER_SCU_V1"),
     ("SCU_v1", "FORMAT_SCU_V1"),
+    ("Mini-SCU (tunnel)", "FORMAT_MINI_SCU"),
     ("Default UAP Format", "FORMAT_LONG"),
     ("SCU Spreadsheet", "FORMAT_LONG_XLSX"),
     ("SCU_v2", "FORMAT_SCU_V2"),
@@ -46,7 +47,7 @@ _SCHEMA_SPECS: list[tuple[str, str]] = [
 ]
 
 SCHEMA_FORMAT_GROUPS: dict[str, list[str]] = {
-    "Canonical & SCU": ["MasterSCU_v1", "SCU_v1", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3"],
+    "Canonical & SCU": ["MasterSCU_v1", "SCU_v1", "Mini-SCU (tunnel)", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3"],
     "Government & official archives": ["Blue Book (USAF)", "UK National Archives"],
     "European national databases": [
         "COBEPS — PAN Notifications (BE)", "COBEPS — COB 2021 (BE)",

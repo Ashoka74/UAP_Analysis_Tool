@@ -778,6 +778,58 @@ _SCU_V1_DROP = ("sightingDetails", "manifest")
 FORMAT_SCU_V1 = {k: v for k, v in FORMAT_SCU_V3.items() if k not in _SCU_V1_DROP}
 
 # ---------------------------------------------------------------------------
+# FORMAT_MINI_SCU — the "tunnel" funnel schema: the ABSOLUTE MINIMUM field set
+# that scu_normalizer's five-criterion eligibility gate reads. Every leaf here
+# is consumed by `scu_eligible` (or the criteria surface it exposes); nothing
+# else is. Purpose: a cheap first pass at scale — parse the whole corpus with
+# this ~27-leaf schema, keep only the rows that clear the gate, then RE-PARSE
+# just the survivors with the full FORMAT_SCU_V3 / FORMAT_MASTER_SCU_V1.
+#
+# Derived from FORMAT_SCU_V3 so the field DEFINITIONS (enum lists, operational
+# defs, P/S/blank engagement semantics) are byte-for-byte identical — extraction
+# quality on these fields does not degrade, only the column count shrinks. It
+# uses SCU_v3's native flat paths, so the normalizer reads it with NO auto-map.
+#
+# Gate provenance (scu_normalizer.py -> scu_eligible), field by field:
+#   in_scu_window                  <- date_time.year
+#   has_core_fields                <- date_time.{year,month,day} + location.country
+#   day_night_resolved             <- date_time.day_night
+#   has_investigation_channel      <- investigation.source
+#   (timeliness_status surface)    <- investigation.reports_within_1_{month,year}...
+#   has_credible_witness           <- witness.roles
+#   has_anomalous_characterization <- craft.primary_shape + performance.* (5)
+#                                     + engagement_type.occupant_{observed,encounter}
+#   has_engagement_signal          <- engagement_type.* (9 activity tags)
+#   military_public_known          <- military.military_public
+#   contradicts_uap (exclusion)    <- assessment.contradictsUap
+# Any change to the gate's inputs must be mirrored here; tests/test_scu.py
+# asserts MINI covers every gate input and stays a strict subset of SCU_v3.
+# ---------------------------------------------------------------------------
+def _build_mini_scu(v3):
+    def keep(block, *keys):
+        return {k: v3[block][k] for k in keys}
+    return {
+        "date_time": keep("date_time", "year", "month", "day", "day_night"),
+        "location": keep("location", "country"),
+        "investigation": keep(
+            "investigation", "source",
+            "reports_within_1_month_of_sighting",
+            "reports_within_1_year_of_sighting"),
+        "witness": keep("witness", "roles"),
+        "craft": keep("craft", "primary_shape"),
+        "performance": keep(
+            "performance", "hypersonic", "instantaneous_acceleration",
+            "low_observability", "trans_medium_travel", "positive_lift"),
+        # all 10 engagement tags: 9 activity signals + the no_engagement guard
+        # (kept LAST, as generated, so the autoregressive order holds)
+        "engagement_type": dict(v3["engagement_type"]),
+        "military": keep("military", "military_public"),
+        "assessment": keep("assessment", "contradictsUap", "notes"),
+    }
+
+FORMAT_MINI_SCU = _build_mini_scu(FORMAT_SCU_V3)
+
+# ---------------------------------------------------------------------------
 # FORMAT_MASTER_SCU_V1 — "MasterSCU v1" parsing schema (the default)
 #
 # The full canonical SCU master schema, loaded from uap_master_schema.json so

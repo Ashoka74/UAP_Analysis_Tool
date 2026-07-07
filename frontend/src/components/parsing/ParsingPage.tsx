@@ -88,6 +88,12 @@ export function ParsingPage() {
     if (list.length && !list.includes(model)) setModel(list[0]);
   }, [provider, schemas]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The worker ceiling is provider-specific (DeepSeek allows 500 concurrent
+  // requests; OpenAI tiers far less) — clamp when switching back to OpenAI.
+  useEffect(() => {
+    if (provider === 'openai' && maxWorkers > 64) setMaxWorkers(64);
+  }, [provider]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-merge schemas / recompute the coverage diff whenever the schema
   // selection or the uploaded dataset columns change. With a dataset present we
   // fetch the diff (which also carries the per-mode extraction schemas); the
@@ -545,7 +551,7 @@ export function ParsingPage() {
                   <input
                     type="range"
                     min={1}
-                    max={64}
+                    max={provider === 'deepseek' ? 500 : 64}
                     value={maxWorkers}
                     onChange={(e) => setMaxWorkers(Number(e.target.value))}
                     className="w-full accent-accent"

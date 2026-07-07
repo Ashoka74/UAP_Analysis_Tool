@@ -169,3 +169,24 @@ def test_extract_json_no_quadratic_blowup_on_degenerate_output():
     t0 = time.time()
     assert _extract_json(junk) is None
     assert time.time() - t0 < 2.0, "fallback chain is superlinear again"
+
+
+def test_deepseek_insufficient_balance_is_fatal(no_sleep):
+    """DeepSeek reports a drained account as HTTP 402 'Insufficient Balance' —
+    not a 429 — so it must trip the same circuit breaker as insufficient_quota,
+    while concurrency-limit 429s stay transient (they clear as requests drain)."""
+    calls = {"n": 0, "lock": threading.Lock()}
+
+    def balance_create(**kw):
+        with calls["lock"]:
+            calls["n"] += 1
+        raise Exception(
+            "Error code: 402 - {'error': {'message': 'Insufficient Balance', "
+            "'type': 'unknown_error', 'code': 'invalid_request_error'}}"
+        )
+
+    p = make_parser()
+    p.client = _client_with(balance_create)
+    p.process_descriptions([f"r{i}" for i in range(50)], '{"a": ""}', max_workers=5)
+    assert calls["n"] <= 15, f"drained DeepSeek account stormed ({calls['n']} calls)"
+    assert p.last_errors and p.last_errors[0].startswith("FATAL:")
