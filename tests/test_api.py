@@ -95,3 +95,13 @@ def test_scu_normalize_upload_and_remap(api_client):
                         json={"column_map": {"craft.size": "object.primary_shape"}})
     assert r.status_code == 200
     assert r.json()["mapping"]["methods"]["craft.size"] == "manual"
+
+    # full exports: normalized always; filtered only after a filter ran
+    r = api_client.get("/api/scu/export?scope=filtered")
+    assert r.status_code == 400                            # nothing filtered yet
+    r = api_client.get("/api/scu/export")
+    assert r.status_code == 200 and r.text.count("\n") >= 1
+    r = api_client.post("/api/scu/filter", json={"criterion_keys": ["has_core_fields"]})
+    assert r.status_code == 200
+    r = api_client.get("/api/scu/export?scope=filtered")
+    assert r.status_code == 200

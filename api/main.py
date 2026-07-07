@@ -57,6 +57,7 @@ class SessionState:
         self.parsed_df = None             # flat parsed-responses DataFrame
         self.scu_normalized_df = None     # scu_normalizer.normalize() output
         self.scu_source_df = None         # raw input df, kept so a column-map override can re-normalize
+        self.scu_filtered_df = None       # last eligibility-filtered subset, kept for full export
         self.last_accessed = time.time()
 
 sessions = {}
@@ -1068,7 +1069,7 @@ def scu_normalize(state: SessionState = Depends(get_session)):
         "metrics": result["metrics"],
         "audit_markdown": result["audit_markdown"],
         "mapping": result["mapping"],
-        "data": df_to_json(result["df"], max_rows=5000),
+        "data": df_to_json(result["df"], max_rows=500),
     }
 
 
@@ -1114,7 +1115,7 @@ async def scu_normalize_upload(file: UploadFile = File(...), state: SessionState
         "metrics": result["metrics"],
         "audit_markdown": result["audit_markdown"],
         "mapping": result["mapping"],
-        "data": df_to_json(result["df"], max_rows=5000),
+        "data": df_to_json(result["df"], max_rows=500),
     }
 
 
@@ -1144,8 +1145,35 @@ def scu_remap(req: ScuRemapRequest, state: SessionState = Depends(get_session)):
         "metrics": result["metrics"],
         "audit_markdown": result["audit_markdown"],
         "mapping": result["mapping"],
-        "data": df_to_json(result["df"], max_rows=5000),
+        "data": df_to_json(result["df"], max_rows=500),
     }
+
+
+@app.get("/api/scu/export")
+def scu_export(scope: str = Query(default="normalized"),
+               state: SessionState = Depends(get_session)):
+    """Download the FULL normalized dataset (scope=normalized) or the last
+    eligibility-filtered subset (scope=filtered) as CSV. SCU JSON payloads are
+    preview-capped at 500 rows (a 5,000-row x ~400-column normalize response is
+    a ~65 MB body that gets truncated in transit -> 'Unexpected end of JSON
+    input' in the browser); these exports are uncapped."""
+    from fastapi.responses import Response
+    if scope == "filtered":
+        df, fname = state.scu_filtered_df, "scu_filtered_full.csv"
+        if df is None:
+            raise HTTPException(status_code=400, detail="No filtered rows. Apply the eligibility filter first.")
+    else:
+        df, fname = state.scu_normalized_df, "scu_normalized_full.csv"
+        if df is None:
+            raise HTTPException(status_code=400, detail="No normalized data. Run SCU normalization first.")
+    import io as _io
+    buf = _io.StringIO()
+    df.to_csv(buf, index=False)
+    return Response(
+        content="\ufeff" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @app.post("/api/scu/filter")
@@ -1156,11 +1184,12 @@ def scu_filter(req: ScuFilterRequest, state: SessionState = Depends(get_session)
         result = scu_service.filter_eligibility(state.scu_normalized_df, req.criterion_keys)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Filter failed: {e}")
+    state.scu_filtered_df = result["df"]
     return {
         "status": "ok",
         "funnel": result["funnel"],
         "n_passed": result["n_passed"],
-        "data": df_to_json(result["df"], max_rows=5000),
+        "data": df_to_json(result["df"], max_rows=500),
     }
 
 

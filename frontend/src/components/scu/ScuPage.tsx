@@ -290,13 +290,37 @@ export function ScuPage() {
             </Panel>
           )}
 
-          {/* Data table — filtered result if present, else normalized */}
-          <Panel
-            title={filtered ? 'Filtered (SCU-eligible) Rows' : 'Normalized Data'}
-            noPad
-          >
-            <DataTable data={filtered ? filtered.data : norm.data} maxHeight="calc(100vh - 420px)" />
-          </Panel>
+          {/* Data table — filtered result if present, else normalized. The JSON
+              payload is a 500-row preview; the button downloads the full set. */}
+          {(() => {
+            const active = filtered ? filtered.data : norm.data;
+            const scope: 'filtered' | 'normalized' = filtered ? 'filtered' : 'normalized';
+            return (
+              <Panel
+                title={filtered ? 'Filtered (SCU-eligible) Rows' : 'Normalized Data'}
+                subtitle={
+                  `${active.returned_rows.toLocaleString()} of ${active.total_rows.toLocaleString()} rows shown` +
+                  (active.total_rows > active.returned_rows ? ' · table preview is capped, download for all rows' : '')
+                }
+                actions={
+                  <button
+                    onClick={() =>
+                      api.scuExportCsv(scope).catch((e) =>
+                        setError(e instanceof Error ? e.message : 'Export failed'))
+                    }
+                    title={`Download the full ${scope} dataset as CSV (the in-table export only has the displayed rows)`}
+                    className="flex items-center gap-1.5 rounded-md border border-border bg-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Download full CSV ({active.total_rows.toLocaleString()} rows)
+                  </button>
+                }
+                noPad
+              >
+                <DataTable data={active} maxHeight="calc(100vh - 420px)" />
+              </Panel>
+            );
+          })()}
         </>
       )}
     </div>

@@ -252,6 +252,23 @@ export const api = {
     );
   },
 
+  // Download the FULL normalized dataset or the eligibility-filtered subset as
+  // CSV (SCU JSON payloads are preview-capped at 500 rows).
+  async scuExportCsv(scope: 'normalized' | 'filtered' = 'normalized'): Promise<void> {
+    const res = await fetch(`${BASE}/scu/export?scope=${scope}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(body.detail || `Export failed: ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = scope === 'filtered' ? 'scu_filtered_full.csv' : 'scu_normalized_full.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   // Re-run normalization on the session's raw SCU source with a manual
   // column-map override ({canonical_input: actual_column}).
   scuRemap(columnMap: Record<string, string>): Promise<ScuNormalizeResponse> {
