@@ -22,7 +22,6 @@ Requests==2.32.4
 scikit_learn==1.7.1
 scipy==1.16.1
 seaborn==0.13.2
-sentence_transformers==5.1.0
 squarify==0.4.4
 statsmodels==0.14.5
 streamlit==1.48.1
@@ -46,6 +45,7 @@ tqdm==4.67.1
 psutil==7.0.0
 transformers==5.13.0
 psycopg[binary]==3.3.4
+sentence_transformers
 
 # Document Preprocessing pipeline (pipeline/) — vendored scripts' deps.
 # (openai, Pillow, pymupdf, Requests are already listed above.)
