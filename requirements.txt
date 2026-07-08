@@ -44,7 +44,7 @@ tf-keras
 stqdm==0.0.5
 tqdm==4.67.1
 psutil==7.0.0
-transformers==5.8.0.dev0
+transformers==5.13.0
 psycopg[binary]==3.3.4
 
 # Document Preprocessing pipeline (pipeline/) — vendored scripts' deps.
