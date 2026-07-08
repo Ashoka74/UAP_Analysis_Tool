@@ -280,7 +280,7 @@ FORMAT_SCU_V2 = {
             "electromagneticEffects": "string — disturbances in electronic devices",
             "visualClarity": "string — clarity of the object's appearance",
             "detailedStructure": "string — surface, texture, structural detail",
-            "presenceHumanoids": "enum [Y, N, U] — Y observed, N explicitly none, U unknown",
+            "presenceHumanoids": "enum [Y, N, U] — Y ONLY if humanoid beings are described in, on, emerging from, or immediately beside the object itself; ordinary humans (witnesses, bystanders, aircraft pilots, a drone's operator on the ground) never make this Y. N when the source explicitly notes none; U when not mentioned",
             "presenceHumanoids_notes": "string — qualifiers (e.g. 'reported via telepathy', 'in photograph'); empty if none",
             "presenceSounds": "enum [Y, N, U]",
             "presenceLights": "enum [Y, N, U]"
@@ -402,7 +402,7 @@ FORMAT_SCU_V2 = {
     "witness": {
         "count": "integer — exact number of independent witnesses; null if unknown",
         "countFreeform": "string — original phrasing when non-numeric (e.g. 'Multiple', 'Hundreds')",
-        "roles": ["enum [Military, Public, Police, Pilot, Civilian, Scientist, Intelligence, Astronaut, Politician, Security] — JSON array of witness roles; no duplicates, order irrelevant"],
+        "roles": ["enum [Military, Public, Police, Pilot, Civilian, Scientist, Intelligence, Astronaut, Politician, Security] — JSON array of witness roles; no duplicates, order irrelevant. Roles describe the human WITNESSES themselves ('Pilot' = a pilot witnessed the event), never the object's or a drone's operator"],
         "notes": "string — rank/role qualifiers that don't belong in the roles enum (e.g. 'Naval Reserve')",
         "description": "string — broader witness background, credibility assessment, observer-location detail"
     },
@@ -421,7 +421,7 @@ FORMAT_SCU_V2 = {
 
     # ── Craft ──────────────────────────────────────────────────────────────────
     "craft": {
-        "primary_shape": "enum [Sphere, Disc, Cigar, Triangle, Diamond, Cylinder, Boomerang, Chevron, Egg, Cone, Saturn, Cross, Rectangle, Teardrop, Fireball, Light, Orb, Tic-Tac, Cube, Pyramid, Oval, Dome, Crescent, Unknown, Other] — dominant observed shape; fold Round/Circle/Ball/Spherical into Sphere",
+        "primary_shape": "enum [Sphere, Disc, Cigar, Triangle, Diamond, Cylinder, Boomerang, Chevron, Egg, Cone, Saturn, Cross, Rectangle, Teardrop, Fireball, Light, Orb, Tic-Tac, Cube, Pyramid, Oval, Dome, Crescent, Unknown, Other] — dominant observed shape; fold Round/Circle/Ball/Spherical into Sphere. Purely descriptive of the reported appearance, independent of identification (a balloon seen as a sphere is Sphere; the prosaic explanation belongs in assessment.contradictsUap). If the source names a conventional craft (airplane, helicopter, quadcopter drone) without describing one of the listed geometries, use Other — never map a named conventional craft to Disc/Cigar/etc. by analogy",
         "secondary_shape": "enum [same values as primary_shape, or empty]",
         "colour": "string — colour or colour combination observed",
         "size": "enum [Tiny (<0.5 m), Small (0.5-3 m), Medium (3-10 m), Large (10-50 m), Very large (50-200 m), Massive (>200 m), Unknown]",
@@ -433,11 +433,11 @@ FORMAT_SCU_V2 = {
     "performance": {
         "speed_mph": "float — estimated or reported speed in mph; null if unknown",
         "acceleration_g": "float — observed peak acceleration in g; null if unknown",
-        "hypersonic": "enum [Y, N, U] — Y observed, N explicitly negative, U unknown/not assessed",
-        "instantaneous_acceleration": "enum [Y, N, U]",
-        "low_observability": "enum [Y, N, U]",
-        "trans_medium_travel": "enum [Y, N, U]",
-        "positive_lift": "enum [Y, N, U]"
+        "hypersonic": "enum [Y, N, U] — Y ONLY if speed above ~Mach 5 is reported or clearly implied (typically without sonic boom); N if observed speeds were conventional; U if not assessed",
+        "instantaneous_acceleration": "enum [Y, N, U] — Y ONLY if the object accelerated from rest or slow motion to extreme speed near-instantaneously, beyond any known aircraft; a bird, insect or drone darting at close range is N; U if not assessed",
+        "low_observability": "enum [Y, N, U] — Y ONLY if the object evaded detection when detection was expected (no radar return despite visual contact, abrupt vanishing, cloaking-like behaviour); an object merely too small or too distant for radar is N; U if not assessed",
+        "trans_medium_travel": "enum [Y, N, U] — Y ONLY if the object crossed between media (air/water/space) without apparent performance loss; a diving bird or a missile splashing down is N; U if no crossing was observed",
+        "positive_lift": "enum [Y, N, U] — Y ONLY if the object holds or gains altitude with NO apparent means of lift or propulsion (no wings, rotors, jets, or balloon envelope). Any aircraft, drone or balloon flying normally is N — merely being airborne or hovering is NOT positive lift. U when the lift mechanism cannot be judged from the source"
     },
 
     # ── Military context ───────────────────────────────────────────────────────
@@ -480,8 +480,8 @@ FORMAT_SCU_V2 = {
         "electronic_transmissions": "P, S, or blank — electronic signals attributed to the UAP were detected",
         "interference_weapons": "P, S, or blank — weapons systems were interfered with or disabled",
         "military_intrusions": "P, S, or blank — UAP intruded into a secured installation or restricted airspace",
-        "occupant_encounter": "P, S, or blank — occupants were directly encountered by witnesses",
-        "occupant_observed": "P, S, or blank — occupants were visually observed from a distance, no encounter",
+        "occupant_encounter": "P, S, or blank — occupants OF THE OBJECT were directly encountered by witnesses. 'Occupant' means a being belonging to the object; a drone operator, conventional-aircraft pilot or ground crew is NOT an occupant — leave blank for those",
+        "occupant_observed": "P, S, or blank — occupants OF THE OBJECT were visually observed from a distance, no encounter. Same rule as occupant_encounter: drone operators, aircraft pilots and ground personnel are NOT occupants — leave blank for those",
         "close_approach": "P, S, or blank — UAP made a close approach (<30 m) to witnesses, vehicles or structures",
         "no_engagement": "P, S, or blank — set to P only when no other engagement type applies"
     },
@@ -543,7 +543,7 @@ FORMAT_SCU_V3 = {
             "electromagneticEffects": "string — disturbances in electronic devices",
             "visualClarity": "string — clarity of the object's appearance",
             "detailedStructure": "string — surface, texture, structural detail",
-            "presenceHumanoids": "enum [Y, N, U] — Y observed, N explicitly none, U unknown",
+            "presenceHumanoids": "enum [Y, N, U] — Y ONLY if humanoid beings are described in, on, emerging from, or immediately beside the object itself; ordinary humans (witnesses, bystanders, aircraft pilots, a drone's operator on the ground) never make this Y. N when the source explicitly notes none; U when not mentioned",
             "presenceHumanoids_notes": "string — qualifiers (e.g. 'reported via telepathy', 'in photograph'); empty if none",
             "presenceSounds": "enum [Y, N, U]",
             "presenceLights": "enum [Y, N, U]"
@@ -669,7 +669,7 @@ FORMAT_SCU_V3 = {
     "witness": {
         "count": "integer — exact number of independent witnesses; null if unknown",
         "countFreeform": "string — original phrasing when non-numeric (e.g. 'Multiple', 'Hundreds')",
-        "roles": ["enum [Military, Public, Police, Pilot, Civilian, Scientist, Intelligence, Astronaut, Politician, Security] — JSON array of witness roles; no duplicates, order irrelevant"],
+        "roles": ["enum [Military, Public, Police, Pilot, Civilian, Scientist, Intelligence, Astronaut, Politician, Security] — JSON array of witness roles; no duplicates, order irrelevant. Roles describe the human WITNESSES themselves ('Pilot' = a pilot witnessed the event), never the object's or a drone's operator"],
         "notes": "string — rank/role qualifiers that don't belong in the roles enum (e.g. 'Naval Reserve')",
         "description": "string — broader witness background, credibility assessment, observer-location detail"
     },
@@ -688,7 +688,7 @@ FORMAT_SCU_V3 = {
 
     # ── Craft ──────────────────────────────────────────────────────────────────
     "craft": {
-        "primary_shape": "enum [Sphere, Disc, Cigar, Triangle, Diamond, Cylinder, Boomerang, Chevron, Egg, Cone, Saturn, Cross, Rectangle, Teardrop, Fireball, Light, Orb, Tic-Tac, Cube, Pyramid, Oval, Dome, Crescent, Unknown, Other] — dominant observed shape; fold Round/Circle/Ball/Spherical into Sphere",
+        "primary_shape": "enum [Sphere, Disc, Cigar, Triangle, Diamond, Cylinder, Boomerang, Chevron, Egg, Cone, Saturn, Cross, Rectangle, Teardrop, Fireball, Light, Orb, Tic-Tac, Cube, Pyramid, Oval, Dome, Crescent, Unknown, Other] — dominant observed shape; fold Round/Circle/Ball/Spherical into Sphere. Purely descriptive of the reported appearance, independent of identification (a balloon seen as a sphere is Sphere; the prosaic explanation belongs in assessment.contradictsUap). If the source names a conventional craft (airplane, helicopter, quadcopter drone) without describing one of the listed geometries, use Other — never map a named conventional craft to Disc/Cigar/etc. by analogy",
         "secondary_shape": "enum [same values as primary_shape, or empty]",
         "colour": "string — colour or colour combination observed",
         "size": "enum [Tiny (<0.5 m), Small (0.5-3 m), Medium (3-10 m), Large (10-50 m), Very large (50-200 m), Massive (>200 m), Unknown]",
@@ -700,11 +700,11 @@ FORMAT_SCU_V3 = {
     "performance": {
         "speed_mph": "float — estimated or reported speed in mph; null if unknown",
         "acceleration_g": "float — observed peak acceleration in g; null if unknown",
-        "hypersonic": "enum [Y, N, U] — Y observed, N explicitly negative, U unknown/not assessed",
-        "instantaneous_acceleration": "enum [Y, N, U]",
-        "low_observability": "enum [Y, N, U]",
-        "trans_medium_travel": "enum [Y, N, U]",
-        "positive_lift": "enum [Y, N, U]"
+        "hypersonic": "enum [Y, N, U] — Y ONLY if speed above ~Mach 5 is reported or clearly implied (typically without sonic boom); N if observed speeds were conventional; U if not assessed",
+        "instantaneous_acceleration": "enum [Y, N, U] — Y ONLY if the object accelerated from rest or slow motion to extreme speed near-instantaneously, beyond any known aircraft; a bird, insect or drone darting at close range is N; U if not assessed",
+        "low_observability": "enum [Y, N, U] — Y ONLY if the object evaded detection when detection was expected (no radar return despite visual contact, abrupt vanishing, cloaking-like behaviour); an object merely too small or too distant for radar is N; U if not assessed",
+        "trans_medium_travel": "enum [Y, N, U] — Y ONLY if the object crossed between media (air/water/space) without apparent performance loss; a diving bird or a missile splashing down is N; U if no crossing was observed",
+        "positive_lift": "enum [Y, N, U] — Y ONLY if the object holds or gains altitude with NO apparent means of lift or propulsion (no wings, rotors, jets, or balloon envelope). Any aircraft, drone or balloon flying normally is N — merely being airborne or hovering is NOT positive lift. U when the lift mechanism cannot be judged from the source"
     },
 
     # ── Military context ───────────────────────────────────────────────────────
@@ -749,8 +749,8 @@ FORMAT_SCU_V3 = {
         "electronic_transmissions": "P, S, or blank — electronic signals attributed to the UAP were detected",
         "interference_weapons": "P, S, or blank — weapons systems were interfered with or disabled",
         "military_intrusions": "P, S, or blank — UAP intruded into a secured installation or restricted airspace",
-        "occupant_encounter": "P, S, or blank — occupants were directly encountered by witnesses",
-        "occupant_observed": "P, S, or blank — occupants were visually observed from a distance, no encounter",
+        "occupant_encounter": "P, S, or blank — occupants OF THE OBJECT were directly encountered by witnesses. 'Occupant' means a being belonging to the object; a drone operator, conventional-aircraft pilot or ground crew is NOT an occupant — leave blank for those",
+        "occupant_observed": "P, S, or blank — occupants OF THE OBJECT were visually observed from a distance, no encounter. Same rule as occupant_encounter: drone operators, aircraft pilots and ground personnel are NOT occupants — leave blank for those",
         "close_approach": "P, S, or blank — UAP made a close approach (<30 m) to witnesses, vehicles or structures",
         "no_engagement": "P, S, or blank — set to P only when no other engagement type applies"
     },
