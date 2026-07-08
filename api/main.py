@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="UAP Analysis API", version="1.0.0")
 
 # CORS Improvement (Codex #6): Explicit origin allowlist, credentials disabled unless required
-origins = os.getenv("UAP_API_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+origins = os.getenv(
+    "UAP_API_CORS_ORIGINS",
+    "https://uap-analysis-tool.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+)
 allow_origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
 
 app.add_middleware(
@@ -516,6 +519,25 @@ def get_column_values(
         "values": [{"value": str(k), "count": int(v)} for k, v in counts.items()],
         "total_matches": total_matches,
     }
+
+@app.get("/api/data/export")
+def data_export(state: SessionState = Depends(get_session)):
+    """Download the FULL filtered dataset as CSV. The Data Explorer's in-table
+    view is display-capped (df_to_json's max_rows) so large uploads don't ship
+    tens of MB to the browser — this endpoint is the uncapped export, mirroring
+    /api/parse/export and /api/scu/export."""
+    from fastapi.responses import Response
+    df = state.filtered_data if state.filtered_data is not None else state.dataset
+    if df is None:
+        raise HTTPException(status_code=400, detail="No dataset loaded")
+    import io as _io
+    buf = _io.StringIO()
+    df.to_csv(buf, index=False)
+    return Response(
+        content="﻿" + buf.getvalue(),   # BOM keeps Excel in UTF-8
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="filtered_data_full.csv"'},
+    )
 
 @app.post("/api/analyze/run")
 def run_analysis(req: AnalysisRequest, state: SessionState = Depends(get_session)):
