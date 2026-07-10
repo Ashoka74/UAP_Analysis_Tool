@@ -30,7 +30,8 @@ st.caption(
 
 # Every script the pipeline expects — used for the presence check.
 PIPELINE_SCRIPTS = [
-    "download_uap_pdfs.py", "restructure_pages.py", "split_pages.py",
+    "download_uap_pdfs.py", "check_new_release.py", "embed_media.py",
+    "restructure_pages.py", "split_pages.py",
     "reorganize.py", "stamp_pages.py", "find_ocr_targets.py", "run_ocr.py",
     "destamp_pages.py", "page_coverage.py", "concat_pages.py",
     "extract_reports.py", "pdf_to_reports.py", "reconcile.py", "audit.py",
@@ -84,6 +85,11 @@ with st.expander("⚙️ Configuration", expanded=True):
     nvidia_key = k3.text_input(
         "NVIDIA_API_KEY", _secret("NVIDIA_API_KEY"), type="password",
         help="Optional — used by pdf_to_reports.py (NVIDIA NIM extraction).",
+    )
+    db_url = st.text_input(
+        "DATABASE_URL", _secret("DATABASE_URL"), type="password",
+        help="Optional — Neon Postgres DSN for embed_media.py (multimodal "
+             "pgvector embeddings). The embed step self-skips without it.",
     )
 
     # Popover (not a nested expander — Streamlit forbids expander-in-expander).
@@ -172,6 +178,8 @@ def run_command(cmd_str: str, key: str) -> None:
         env["GEMINI_API_KEY"] = gemini_key
     if nvidia_key:
         env["NVIDIA_API_KEY"] = nvidia_key
+    if db_url:
+        env["DATABASE_URL"] = db_url
 
     buf: list[str] = []
     with st.status(f"Running: `{cmd_str}`", expanded=True) as status:
@@ -226,8 +234,17 @@ def step(key: str, label: str, desc: str, default_cmd: str) -> None:
 # ── Stage 0 — Scrape ───────────────────────────────────────────────────────
 with st.expander("0 · Scrape — download primary-source PDFs", expanded=False):
     step(
+        "check_release", "check_new_release.py",
+        "Check war.gov for a new UAP release (manifest diff vs release_state.json). "
+        "Detects + downloads new PDFs and runs ALL stages below automatically. "
+        "Use --dry-run to only check, --force to reprocess, --stop-after layout "
+        "to skip the API-key stages.",
+        "python check_new_release.py --workdir . --dry-run",
+    )
+    step(
         "scrape", "download_uap_pdfs.py",
-        "Downloads the war.gov release_1 PDFs into UAP_PDFs/ beside the script.",
+        "Legacy: downloads the war.gov release_1 PDFs (static list) into "
+        "UAP_PDFs/ beside the script. Superseded by check_new_release.py.",
         "python download_uap_pdfs.py",
     )
 
@@ -340,6 +357,18 @@ with st.expander("5 · Table creation — assemble the report table", expanded=F
         "The resulting table (`parsed_reports.xlsx` / `enriched_reports.xlsx`) is "
         "what the **UAP Feature Extraction** page loads — upload it there to "
         "continue into schema parsing and the SCU filters."
+    )
+
+# ── Stage 6 — Multimodal embeddings ────────────────────────────────────────
+with st.expander("6 · Embed — IMG/VID/AUD assets → Gemini → pgvector", expanded=False):
+    step(
+        "embed_media", "embed_media.py",
+        "Embed the release's images/videos/audio (from uap-csv.csv) via "
+        "gemini-embedding-2 into the Neon `embeddings` table. Needs "
+        "GEMINI_API_KEY + DATABASE_URL above (+ ffmpeg for video). Videos "
+        "come from the release's CloudFront bundle — multi-GB download. "
+        "Use --dry-run to preview, --skip-video for images only.",
+        "python embed_media.py --manifest uap-csv.csv --dry-run",
     )
 
 # ── Audit ──────────────────────────────────────────────────────────────────
