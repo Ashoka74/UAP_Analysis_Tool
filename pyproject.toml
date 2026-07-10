@@ -60,6 +60,7 @@ dependencies = [
     "runpod-flash>=1.16.0",
     "psycopg[binary]>=3.3.4",
     "pgvector>=0.4.2",
+    "curl-cffi>=0.15.0",
 ]
 
 [tool.uv.sources]

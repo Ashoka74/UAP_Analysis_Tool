@@ -123,17 +123,41 @@ def make_opener():
     return opener
 
 
+def _cffi_get_bytes(url: str, timeout: int = 60) -> bytes:
+    """Chrome-impersonated fetch via curl_cffi.
+
+    Akamai fingerprints TLS: plain urllib passes from residential IPs (with
+    the Sec-Fetch headers) but gets 403 from datacenter IPs (Railway, Render,
+    cloud runners). curl_cffi presents a real Chrome TLS fingerprint, which
+    passes from both. Optional dep — ImportError propagates to the caller.
+    """
+    from curl_cffi import requests as cffi_requests
+    r = cffi_requests.get(url, impersonate="chrome", timeout=timeout,
+                          headers={"Referer": "https://www.war.gov/"})
+    r.raise_for_status()
+    return r.content
+
+
+def _get_with_fallback(opener, url: str, timeout: int = 30) -> bytes:
+    """urllib first (no extra dep), curl_cffi Chrome impersonation second."""
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with opener.open(req, timeout=timeout) as resp:
+            return resp.read()
+    except Exception as first_err:
+        try:
+            return _cffi_get_bytes(url, timeout=timeout)
+        except ImportError:
+            raise first_err
+
+
 def fetch_release_page(opener) -> str:
-    req = urllib.request.Request(RELEASE_PAGE, headers=HEADERS)
-    with opener.open(req, timeout=30) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    return _get_with_fallback(opener, RELEASE_PAGE).decode("utf-8", errors="replace")
 
 
 def fetch_manifest(opener) -> str:
     """Fetch the cumulative uap-data.csv manifest. Raises on HTTP failure."""
-    req = urllib.request.Request(MANIFEST_URL, headers=HEADERS)
-    with opener.open(req, timeout=30) as resp:
-        return resp.read().decode("utf-8-sig", errors="replace")
+    return _get_with_fallback(opener, MANIFEST_URL).decode("utf-8-sig", errors="replace")
 
 
 def parse_manifest(text: str) -> list[dict]:
@@ -211,14 +235,32 @@ def save_state(workdir: Path, state: dict) -> None:
 
 
 def _stream_download(opener, url: str, filepath: Path) -> int:
-    """Stream a URL to disk (bundles can be hundreds of MB). Returns bytes written."""
-    req = urllib.request.Request(url, headers=HEADERS)
+    """Stream a URL to disk (bundles can be hundreds of MB). Returns bytes written.
+
+    Same urllib → curl_cffi fallback as _get_with_fallback, kept streaming in
+    both paths so multi-GB bundles never sit in memory.
+    """
     tmp = filepath.with_suffix(filepath.suffix + ".part")
     written = 0
-    with opener.open(req, timeout=120) as resp, open(tmp, "wb") as f:
-        while chunk := resp.read(1 << 20):
-            f.write(chunk)
-            written += len(chunk)
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with opener.open(req, timeout=120) as resp, open(tmp, "wb") as f:
+            while chunk := resp.read(1 << 20):
+                f.write(chunk)
+                written += len(chunk)
+    except Exception as first_err:
+        try:
+            from curl_cffi import requests as cffi_requests
+        except ImportError:
+            raise first_err
+        written = 0
+        with cffi_requests.Session() as s, open(tmp, "wb") as f:
+            r = s.get(url, impersonate="chrome", timeout=300, stream=True,
+                      headers={"Referer": "https://www.war.gov/"})
+            r.raise_for_status()
+            for chunk in r.iter_content(1 << 20):
+                f.write(chunk)
+                written += len(chunk)
     if written < 100:
         tmp.unlink(missing_ok=True)
         raise ValueError(f"response too small ({written} bytes) — likely an error page")
