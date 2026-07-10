@@ -17,6 +17,7 @@ Usage
 """
 
 import re
+import os
 import json
 import shutil
 import argparse
@@ -24,7 +25,7 @@ from pathlib import Path
 from datetime import datetime
 
 # ── Target root (all new subfolders are created inside here) ─────────────────
-DEFAULT_ROOT = "D:/divided"
+DEFAULT_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
 
 # ── Classification rules  (first match wins — order matters) ─────────────────
 # Each tuple: (regex_on_folder_name_lowercase, destination_relative_to_root)

@@ -985,7 +985,8 @@ def find_lat_lon_columns(df):
         return None, None
 
 def load_data(file_path, key='df'):
-    return pd.read_hdf(file_path, key=key)
+    from data_fetch import load_uap_dataset
+    return load_uap_dataset(file_path, key=key)
 
 
 # Load dataset

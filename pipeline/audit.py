@@ -24,6 +24,7 @@ Usage
 """
 
 import re
+import os
 import csv
 import argparse
 from pathlib import Path
@@ -31,7 +32,7 @@ from collections import defaultdict
 from datetime import datetime
 
 DEFAULT_CSV  = "uap-csv.csv"
-DEFAULT_ROOT = "D:/divided"
+DEFAULT_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
 DEFAULT_OUT  = "audit_report.md"
 
 # ── keyword patterns ──────────────────────────────────────────────────────────

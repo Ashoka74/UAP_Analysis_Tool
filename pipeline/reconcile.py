@@ -23,6 +23,7 @@ Usage:
 """
 
 import re
+import os
 import csv
 import json
 import argparse
@@ -33,7 +34,7 @@ import yaml          # pip install pyyaml --break-system-packages
 
 # ── tuneable paths ────────────────────────────────────────────────────────────
 DEFAULT_CSV        = "uap-csv.csv"
-DEFAULT_DIVIDED    = "D:/divided"
+DEFAULT_DIVIDED    = os.environ.get("UAP_PIPELINE_ROOT", "raw")
 DEFAULT_REPORTS    = "reports_out"
 DEFAULT_EXTRACTED  = "extracted"
 DEFAULT_OUT        = "records"

@@ -24,13 +24,14 @@ Usage
 """
 
 import re
+import os
 import json
 import shutil
 import argparse
 from pathlib import Path
 from datetime import datetime
 
-DEFAULT_ROOT = "D:/divided"
+DEFAULT_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
 LOG_FILENAME = "page_move_log.json"
 
 # Names that are not document folders

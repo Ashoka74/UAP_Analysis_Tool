@@ -375,12 +375,38 @@ def load_data(
     type: str = Query(default="west"),
     state: SessionState = Depends(get_session)
 ):
-    path = DATA_PATH_EAST if type == "east" else DATA_PATH_WEST
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
 
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=f"Dataset file not found: {os.path.basename(path)}")
+    if type == "releases":
+        # Live war.gov UAP release manifest (cumulative, one row per document:
+        # Release Date / Title / Type / Agency / blurb / media link). Falls
+        # back to the copy the weekly pipeline saves in the workdir.
+        text = None
+        try:
+            from pipeline.check_new_release import make_opener, fetch_manifest
+            text = fetch_manifest(make_opener())
+        except Exception:
+            cached = os.path.join(_REPO_ROOT, "pipeline_data", "uap-csv.csv")
+            if os.path.exists(cached):
+                with open(cached, encoding="utf-8-sig") as f:
+                    text = f.read()
+        if text is None:
+            raise HTTPException(
+                status_code=502,
+                detail="war.gov manifest unreachable and no cached copy at pipeline_data/uap-csv.csv",
+            )
+        df = pd.read_csv(io.StringIO(text)).dropna(axis=1, how="all")
+        df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    else:
+        path = DATA_PATH_EAST if type == "east" else DATA_PATH_WEST
+        try:
+            # Resolves env-override path → local h5/parquet → HF Hub download.
+            from data_fetch import load_uap_dataset
+            df = load_uap_dataset(path, key="df")
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Dataset file not found: {os.path.basename(path)}")
     try:
-        df = pd.read_hdf(path, key="df")
         if "embeddings" in df.columns:
             df = df.drop(columns=["embeddings"])
         full_row_count = len(df)

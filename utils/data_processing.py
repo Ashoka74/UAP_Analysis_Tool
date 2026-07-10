@@ -400,9 +400,10 @@ class DataProcessor:
     @staticmethod
     @st.cache_data
     def load_data(file_path: str, key: str = 'df') -> pd.DataFrame:
-        """Load data from HDF5 file with caching"""
+        """Load data by name or path (local h5/parquet, else HF Hub) with caching"""
         try:
-            return pd.read_hdf(file_path, key=key)
+            from data_fetch import load_uap_dataset
+            return load_uap_dataset(file_path, key=key)
         except Exception as e:
             logger.error(f"Error loading data from {file_path}: {e}")
             raise

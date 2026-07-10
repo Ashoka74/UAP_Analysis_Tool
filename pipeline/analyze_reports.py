@@ -9,14 +9,16 @@ Usage:
     python analyze_reports.py --input _all_reports.json --out anomalies.md
 """
 
+import os
 import json
 import re
 import argparse
 from pathlib import Path
 from collections import defaultdict
 
-DEFAULT_INPUT = "D:/divided/extracted/_all_reports.json"
-DEFAULT_OUT   = "D:/divided/anomaly_report.md"
+_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
+DEFAULT_INPUT = os.path.join(_ROOT, "extracted", "_all_reports.json")
+DEFAULT_OUT   = os.path.join(_ROOT, "anomaly_report.md")
 
 # ── thresholds ─────────────────────────────────────────────────────────────────
 SHORT_TEXT_CHARS    = 200    # raw_text shorter than this is suspicious

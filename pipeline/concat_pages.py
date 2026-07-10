@@ -34,7 +34,7 @@ import re
 import argparse
 from pathlib import Path
 
-DEFAULT_ROOT = "D:/divided"
+DEFAULT_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
 
 # Directories to never descend into during os.walk / rglob
 # NOTE: agency folder names (DOD, NASA, FBI, DOS, NARA-CIA, MISC) are intentionally

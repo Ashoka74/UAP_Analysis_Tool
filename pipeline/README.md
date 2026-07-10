@@ -23,13 +23,14 @@ python pipeline/page_coverage.py --root /path/to/workdir
 
 | Stage | Scripts |
 |-------|---------|
-| 0 · Scrape | `download_uap_pdfs.py` |
+| 0 · Scrape | `download_uap_pdfs.py` (release_1 static list), `check_new_release.py` (cron: detect + fetch new releases, then run stages 1-4) |
 | 1 · Layout | `split_pages.py`, `restructure_pages.py`, `reorganize.py` |
 | 2 · OCR | `stamp_pages.py`, `find_ocr_targets.py`, `run_ocr.py`, `destamp_pages.py` |
 | 3 · Assembly | `page_coverage.py`, `concat_pages.py` |
 | 4 · Extraction | `extract_reports.py`, `pdf_to_reports.py`, `reconcile.py` |
 | 5 · Table | `add_source_agency.py`, `analyze_reports.py`, `join_reports.py`, `map_yaml_to_reports.py` |
 | Audit | `audit.py`, `find_missing_concat.py` |
+| 6 · Embed | `embed_media.py` — IMG/VID/AUD release assets → Gemini multimodal embeddings (`embeddings_v2.py`) → Neon pgvector. Needs `GEMINI_API_KEY` + `DATABASE_URL` (+ ffmpeg); self-skips when absent. |
 
 ## Dependencies
 
@@ -41,3 +42,19 @@ interpreter already has them: `pyyaml`, `google-genai`, `pypdf`, `mistralai`,
 
 API keys (entered in the page or via `st.secrets`): `MISTRAL_API_KEY` (OCR),
 `GEMINI_API_KEY` (extraction), `NVIDIA_API_KEY` (optional NIM extraction).
+
+## Paths
+
+No script contains an absolute path: every `DEFAULT_ROOT`-style constant
+resolves to `$UAP_PIPELINE_ROOT` if set, else the current working directory —
+so the pipeline runs identically on a laptop, in Docker, or on a remote cron.
+
+## Scheduled release watching
+
+`check_new_release.py` is the cron entry point: it scrapes
+`https://www.war.gov/UFO/` for per-release document-bundle ZIPs
+(`/medialink/ufo/**/release_NN...zip`), compares against
+`release_state.json` in the workdir, and on a new release downloads +
+extracts the bundle and runs stages 1-4 end to end. `--dry-run` checks
+without running; `--force` reruns regardless; `--stop-after ocr` does a
+partial run. State only advances after a fully successful pipeline run.

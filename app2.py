@@ -1034,7 +1034,8 @@ from pandas.api.types import (
 
 
 def load_data(file_path, key='df'):
-    return pd.read_hdf(file_path, key=key)
+    from data_fetch import load_uap_dataset
+    return load_uap_dataset(file_path, key=key)
 
 
 def gemini_query(question, selected_data, gemini_key):

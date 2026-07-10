@@ -57,3 +57,7 @@ mistralai==1.12.4
 reportlab==4.5.1
 pdf2image==1.17.0
 pdfplumber==0.11.9
+pyarrow==18.1.0
+huggingface_hub==1.14.0
+psycopg[binary]==3.3.4
+pgvector==0.4.1

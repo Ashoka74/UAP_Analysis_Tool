@@ -42,7 +42,7 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-DEFAULT_TARGETS = "D:/divided/ocr_targets.txt"
+DEFAULT_TARGETS = os.path.join(os.environ.get("UAP_PIPELINE_ROOT", "."), "ocr_targets.txt")
 MODEL           = "mistral-ocr-latest"
 MAX_RETRIES     = 3
 RETRY_WAIT      = 10

@@ -32,7 +32,7 @@ export function Dashboard() {
     fetchSummary();
   }, [fetchSummary]);
 
-  const handleLoadData = async (type: 'west' | 'east' = 'west') => {
+  const handleLoadData = async (type: 'west' | 'east' | 'releases' = 'west') => {
     setLoading(true);
     setError(null);
     try {
@@ -100,6 +100,14 @@ export function Dashboard() {
                   className="flex-1 px-4 py-3 text-sm font-medium transition-colors hover:bg-purple/10 hover:text-purple disabled:opacity-50"
                 >
                   East
+                </button>
+                <button
+                  onClick={() => handleLoadData('releases')}
+                  disabled={loading}
+                  title="Live war.gov UAP release manifest — one row per released document"
+                  className="flex-1 px-4 py-3 text-sm font-medium transition-colors hover:bg-cyan/10 hover:text-cyan disabled:opacity-50"
+                >
+                  Releases
                 </button>
               </div>
             </div>

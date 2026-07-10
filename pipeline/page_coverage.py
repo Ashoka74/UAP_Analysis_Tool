@@ -25,8 +25,8 @@ import json
 import argparse
 from pathlib import Path
 
-DEFAULT_ROOT    = "D:/divided"
-DEFAULT_OUT_DIR = "D:/divided"
+DEFAULT_ROOT    = os.environ.get("UAP_PIPELINE_ROOT", ".")
+DEFAULT_OUT_DIR = DEFAULT_ROOT
 
 PAGE_DIR_RE = re.compile(r"^page_(\d+)$", re.IGNORECASE)
 

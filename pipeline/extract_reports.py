@@ -69,8 +69,9 @@ from google import genai
 from google.genai import types
 from google.api_core import exceptions as google_exceptions
 
-DEFAULT_CONCAT       = "D:/divided/concat"
-DEFAULT_OUT          = "D:/divided/extracted"
+_ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
+DEFAULT_CONCAT       = os.path.join(_ROOT, "concat")
+DEFAULT_OUT          = os.path.join(_ROOT, "extracted")
 DEFAULT_CHUNK_PAGES  = 40     # pages per API call; tune down if still truncating
 DEFAULT_WORKERS      = 1      # concurrent files; increase for throughput
 MAX_RETRIES          = 6      # retries on 429 / 503 before giving up
