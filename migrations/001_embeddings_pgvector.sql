@@ -35,8 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_parent_id
     ON embeddings (parent_id) WHERE parent_id IS NOT NULL;
 
 -- ANN index for cosine search (search_similar uses the <=> operator).
-CREATE INDEX IF NOT EXISTS idx_embeddings_embedding
+-- Name matches the Vercel app's migration so running both is idempotent.
+-- On small Neon computes, bump maintenance_work_mem cautiously for the
+-- build (SET maintenance_work_mem = '512MB'); 2GB can OOM a 0.25 CU node.
+CREATE INDEX IF NOT EXISTS idx_embeddings_hnsw
     ON embeddings USING hnsw (embedding vector_cosine_ops);
+
+-- Owner/scope filters evaluated before the vector comparison.
+CREATE INDEX IF NOT EXISTS idx_embeddings_user_id  ON embeddings (user_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_org_id   ON embeddings (organization_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_src_type ON embeddings (source_type);
 
 -- If an older CHECK constraint restricts source_type, broaden it:
 -- ALTER TABLE embeddings DROP CONSTRAINT IF EXISTS embeddings_source_type_check;
