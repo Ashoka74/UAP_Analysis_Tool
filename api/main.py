@@ -810,7 +810,7 @@ def get_dashboard_summary(state: SessionState = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # Parsing — LLM feature extraction (parsing.py parity, core tier)
 # ---------------------------------------------------------------------------
-from api.services import parsing_service, scu_service, rag_service, analysis_service, multimodal_service
+from api.services import parsing_service, scu_service, rag_service, analysis_service, multimodal_service, dedup_service
 
 
 def _build_text_series(df: pd.DataFrame, columns: list[str]) -> pd.Series:
@@ -1672,3 +1672,55 @@ def run_magnetic(req: MagneticRequest, state: SessionState = Depends(get_session
             f"{skipped_no_data} returned no usable data."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Deduplication Studio — Simple and Advanced Deduplication API
+# ---------------------------------------------------------------------------
+class DedupSimilarityRequest(BaseModel):
+    text_a: str
+    text_b: str
+
+
+class DedupDuplicateRequest(BaseModel):
+    record_a: dict
+    record_b: dict
+
+
+class DedupAdvancedRequest(BaseModel):
+    threshold: float = 0.80
+    date_diff_days: int = 3
+    max_km: float = 50.0
+    use_llm_judge: bool = False
+
+
+@app.post("/api/dedup/simple/similarity")
+def check_dedup_similarity(req: DedupSimilarityRequest):
+    try:
+        return dedup_service.check_similarity(req.text_a, req.text_b)
+    except Exception as e:
+        logger.error(f"Dedup check similarity failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dedup/simple/duplicate")
+def check_dedup_duplicate(req: DedupDuplicateRequest):
+    try:
+        return dedup_service.check_duplicate(req.record_a, req.record_b)
+    except Exception as e:
+        logger.error(f"Dedup check duplicate failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dedup/advanced/run")
+def run_dedup_advanced(req: DedupAdvancedRequest):
+    try:
+        return dedup_service.run_advanced_dedup(
+            threshold=req.threshold,
+            date_diff_days=req.date_diff_days,
+            max_km=req.max_km,
+            use_llm_judge=req.use_llm_judge
+        )
+    except Exception as e:
+        logger.error(f"Advanced dedup run failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))

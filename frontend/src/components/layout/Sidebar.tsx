@@ -12,6 +12,7 @@ import {
   FileSearch,
   Search,
   ShieldCheck,
+  GitCompare,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import type { PageId } from '../../types';
@@ -27,6 +28,7 @@ const navItems: { id: PageId; label: string; icon: typeof LayoutDashboard }[] = 
   { id: 'map', label: 'Map', icon: Map },
   { id: 'magnetic', label: 'Magnetic Analysis', icon: Compass },
   { id: 'clusters', label: 'EDA Clusters', icon: Brain },
+  { id: 'dedup', label: 'Dedupe Studio', icon: GitCompare },
 ];
 
 export function Sidebar() {

@@ -137,7 +137,8 @@ export type PageId =
   | 'scu'
   | 'map'
   | 'magnetic'
-  | 'clusters';
+  | 'clusters'
+  | 'dedup';
 
 // ── Parsing ────────────────────────────────────────────────────────────────
 export interface SchemaListResponse {
@@ -389,4 +390,48 @@ export interface XgboostImputeResponse {
   used_pca: boolean;
   n_imputations: number;
   message?: string | null;
+}
+
+// ── Deduplication Studio ───────────────────────────────────────────────────
+export interface SimpleSimilarityResponse {
+  similarity_score: number;
+  is_similar: boolean;
+  model?: string;
+  reason?: string;
+}
+
+export interface SimpleDuplicateResponse {
+  is_duplicate: boolean;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  reasons: string[];
+  metrics: {
+    similarity_score: number;
+    haversine_km: number | null;
+    date_diff_days: number | null;
+  };
+}
+
+export interface FlaggedPair {
+  id_a: string;
+  id_b: string;
+  similarity: number;
+  llm_same_event: boolean;
+  llm_reason: string;
+}
+
+export interface AdvancedDedupResponse {
+  status: string;
+  parameters: {
+    threshold: number;
+    date_diff_days: number;
+    max_km: number;
+    use_llm_judge: boolean;
+  };
+  summary: {
+    total_clusters: number;
+    rows_in_clusters: number;
+    redundant_rows_saved: number;
+    flagged_pairs_count: number;
+  };
+  flagged_pairs: FlaggedPair[];
 }

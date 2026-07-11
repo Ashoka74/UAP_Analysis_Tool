@@ -48,6 +48,7 @@ st.sidebar.toggle(
 pg = st.navigation([
             st.Page("preprocessing.py", title="Document Preprocessing (Scrape → OCR → Reports → Table)", icon="🧪"),
             st.Page("rag_search.py", title="Smart-Search (Retrieval Augmented Generations)", icon="🔍"),
+            st.Page("deduplication.py", title="Deduplication Studio (Harrier Semantic & Spatial Screening)", icon="🧬"),
             st.Page("parsing.py", title="UAP Feature Extraction (Shape, Speed, Color)", icon="📄"),
             st.Page("analyzing.py", title="Statistical Analysis (UMAP+HDBSCAN, XGBoost, V-Cramer)", icon="🧠"),
             st.Page("magnetic.py", title="Magnetic Anomaly Detection (InterMagnet Stations)", icon="🧲"),

@@ -9,6 +9,7 @@ import { ScuPage } from './components/scu/ScuPage';
 import { MapPage } from './components/map/MapPage';
 import { MagneticPage } from './components/magnetic/MagneticPage';
 import { ClusterView } from './components/analysis/ClusterView';
+import { DedupPage } from './components/dedup/DedupPage';
 import { useStore } from './store/useStore';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
       {currentPage === 'map' && <MapPage />}
       {currentPage === 'magnetic' && <MagneticPage />}
       {currentPage === 'clusters' && <ClusterView />}
+      {currentPage === 'dedup' && <DedupPage />}
     </AppShell>
   );
 }
