@@ -90,7 +90,7 @@ def judge(df, sampled):
         "response_mime_type": "application/json", "temperature": 0.0,
         "max_output_tokens": 65536})
     labels = {}
-    CHUNK = 50
+    CHUNK = 25
     for c0 in range(0, len(sampled), CHUNK):
         chunk = sampled[c0:c0 + CHUNK]
         blocks = [f"=== PAIR {k} ===\nRecord A:\n{_ctx(df.loc[a])}\n\nRecord B:\n{_ctx(df.loc[b])}"
@@ -105,14 +105,43 @@ def judge(df, sampled):
             f"Return ONLY a JSON array of exactly {len(chunk)} objects:\n"
             '{"id": <pair id>, "same_event": <true|false>, "reason": "<short>"}\n\n'
             + "\n\n".join(blocks))
-        resp = model.generate_content(prompt)
         try:
-            arr = json.loads(resp.text)
-        except json.JSONDecodeError:
+            resp = model.generate_content(prompt)
+            text = resp.text
+        except Exception as e:
+            print(f"  [WARN] LLM request failed for chunk {c0}: {e}")
+            continue
+
+        arr = []
+        try:
+            arr = json.loads(text)
+        except Exception:
             import re
-            arr = json.loads(re.search(r"\[.*\]", resp.text, re.DOTALL).group(0))
+            m = re.search(r"\[.*\]", text, re.DOTALL)
+            if m:
+                try:
+                    arr = json.loads(m.group(0))
+                except Exception:
+                    pass
+            if not arr:
+                for obj_str in re.findall(r"\{\s*\"id\"\s*:\s*\d+[^}]*\}", text, re.DOTALL):
+                    try:
+                        arr.append(json.loads(obj_str))
+                    except Exception:
+                        id_m = re.search(r"\"id\"\s*:\s*(\d+)", obj_str)
+                        se_m = re.search(r"\"same_event\"\s*:\s*(true|false)", obj_str, re.IGNORECASE)
+                        re_m = re.search(r"\"reason\"\s*:\s*\"([^\"]*)\"", obj_str)
+                        if id_m and se_m:
+                            arr.append({
+                                "id": int(id_m.group(1)),
+                                "same_event": se_m.group(1).lower() == "true",
+                                "reason": re_m.group(1) if re_m else ""
+                            })
         for v in arr:
-            labels[int(v["id"])] = (bool(v.get("same_event", False)), str(v.get("reason", "")))
+            try:
+                labels[int(v["id"])] = (bool(v.get("same_event", False)), str(v.get("reason", "")))
+            except Exception:
+                pass
         print(f"  judged {min(c0+CHUNK, len(sampled))}/{len(sampled)}")
     return labels
 
