@@ -377,6 +377,8 @@ def run_cross_db_pipeline(
                 "date_diff_days": date_diff_days,
                 "text_a_preview": texts_a[i][:180] + ("..." if len(texts_a[i]) > 180 else ""),
                 "text_b_preview": texts_b[j][:180] + ("..." if len(texts_b[j]) > 180 else ""),
+                "row_a": rec_a,
+                "row_b": rec_b,
                 "flags": {
                     "is_similar_text": is_similar_text,
                     "is_similar_date": is_similar_date,

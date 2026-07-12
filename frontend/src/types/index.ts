@@ -445,6 +445,8 @@ export interface CrossDbPair {
   date_diff_days: number | null;
   text_a_preview: string;
   text_b_preview: string;
+  row_a?: Record<string, any>;
+  row_b?: Record<string, any>;
   flags: {
     is_similar_text: boolean;
     is_similar_date: boolean;

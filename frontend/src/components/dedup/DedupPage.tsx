@@ -61,6 +61,8 @@ export function DedupPage() {
   const [crossGateFilter, setCrossGateFilter] = useState<string>('show_all');
   const [crossResult, setCrossResult] = useState<CrossDbPipelineResponse | null>(null);
   const [crossLoading, setCrossLoading] = useState(false);
+  const [selectedPairIndex, setSelectedPairIndex] = useState<number>(0);
+  const [splitViewMode, setSplitViewMode] = useState<'single_pair' | 'batch_table'>('single_pair');
 
   const handleRunCrossDb = async () => {
     setCrossLoading(true);
@@ -68,7 +70,6 @@ export function DedupPage() {
     try {
       let recordsA: any[] = [];
       let recordsB: any[] | null = null;
-
       if (dataSourceMode === 'real_dataset' && dataLoaded && data?.rows && data.rows.length > 0) {
         const mappedRows = data.rows.slice(0, 200).map((row: any, idx: number) => {
           const id = row.id || row.locus_tag || row.case_id || `Case-${idx + 1}`;
@@ -76,7 +77,7 @@ export function DedupPage() {
           const dt = row.date_time || row.date || row.datetime || '2000-01-01';
           const lat = row.latitude || row.lat || 0;
           const lon = row.longitude || row.lon || row.lng || 0;
-          return { id: String(id), witness_notes: String(notes), date_time: String(dt), latitude: Number(lat) || 0, longitude: Number(lon) || 0 };
+          return { ...row, id: String(id), witness_notes: String(notes), date_time: String(dt), latitude: Number(lat) || 0, longitude: Number(lon) || 0 };
         });
 
         if (crossCmpMode === 'between') {
@@ -89,11 +90,11 @@ export function DedupPage() {
         }
       } else {
         const sampleRecords = [
-          { id: 'NUFORC-114209', witness_notes: textA, date_time: dateA, latitude: latA, longitude: lonA },
-          { id: 'MUFON-88912', witness_notes: textB, date_time: dateB, latitude: latB, longitude: lonB },
-          { id: 'BLUEBOOK-1092', witness_notes: 'Triangular craft observed near Phoenix airport with silent motion.', date_time: '1997-03-13', latitude: '33.4400', longitude: '-112.0700' },
-          { id: 'NUFORC-67210', witness_notes: 'Green fireball streaked across night sky over California coast.', date_time: '2025-08-14', latitude: '36.7783', longitude: '-119.4179' },
-          { id: 'MUFON-55319', witness_notes: 'Bright green fireball seen exploding high over California ocean.', date_time: '2025-08-14', latitude: '36.7800', longitude: '-119.4100' }
+          { id: 'NUFORC-114209', witness_notes: textA, date_time: dateA, latitude: latA, longitude: lonA, shape: 'Triangle', city: 'Phoenix', state: 'AZ', duration: '10 mins', database: 'NUFORC' },
+          { id: 'MUFON-88912', witness_notes: textB, date_time: dateB, latitude: latB, longitude: lonB, shape: 'Triangle', city: 'Phoenix', state: 'AZ', duration: '8 mins', database: 'MUFON' },
+          { id: 'BLUEBOOK-1092', witness_notes: 'Triangular craft observed near Phoenix airport with silent motion.', date_time: '1997-03-13', latitude: '33.4400', longitude: '-112.0700', shape: 'Triangle', city: 'Phoenix', state: 'AZ', duration: '12 mins', database: 'Project Blue Book' },
+          { id: 'NUFORC-67210', witness_notes: 'Green fireball streaked across night sky over California coast.', date_time: '2025-08-14', latitude: '36.7783', longitude: '-119.4179', shape: 'Fireball', city: 'Fresno', state: 'CA', duration: '15 secs', database: 'NUFORC' },
+          { id: 'MUFON-55319', witness_notes: 'Bright green fireball seen exploding high over California ocean.', date_time: '2025-08-14', latitude: '36.7800', longitude: '-119.4100', shape: 'Fireball', city: 'Fresno', state: 'CA', duration: '12 secs', database: 'MUFON' }
         ];
         recordsA = sampleRecords;
         recordsB = crossCmpMode === 'between' ? sampleRecords.slice(1) : null;
@@ -109,6 +110,7 @@ export function DedupPage() {
         max_km: maxKm
       });
       setCrossResult(dataRes as CrossDbPipelineResponse);
+      setSelectedPairIndex(0);
     } catch (err: any) {
       setError(err.message || 'Cross-DB pipeline evaluation failed. Check backend connection and dataset schema.');
     } finally {
@@ -758,180 +760,563 @@ export function DedupPage() {
             </div>
           </div>
 
-          {crossResult && (
-            <div className="flex flex-col gap-6 animate-fade-in">
-              <div className="flex items-center justify-between p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-sm">
-                <span className="flex items-center gap-2 font-semibold">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Evaluated {crossResult.summary.total_pairs_evaluated} cross-database candidate pairs!
-                </span>
-                <span className="text-xs font-mono">Mode: {crossResult.mode}</span>
-              </div>
+          {crossResult && (() => {
+            const filteredPairs = crossResult.pairs.filter((p) => {
+              if (crossPathMode === 'easy' && crossBinFilter !== 'All') {
+                return p.bin === crossBinFilter;
+              }
+              if (crossPathMode === 'hard' && crossGateFilter !== 'show_all') {
+                if (crossGateFilter === 'similar_text') return p.flags.is_similar_text;
+                if (crossGateFilter === 'similar_date') return p.flags.is_similar_date;
+                if (crossGateFilter === 'similar_location') return p.flags.is_similar_location;
+                if (crossGateFilter === 'similar_both') return p.flags.is_similar_both;
+                if (crossGateFilter === 'similar_all') return p.flags.is_similar_all;
+              }
+              return true;
+            });
+            const activePair = filteredPairs[selectedPairIndex] || filteredPairs[0] || crossResult.pairs[0];
 
-              {crossPathMode === 'easy' ? (
-                <div className="flex flex-col gap-4">
-                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-amber-400" /> Semantic Similarity Bins Summary
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 rounded-xl border border-red-500/40 bg-red-950/20 flex flex-col">
-                      <span className="text-xs text-red-300 font-medium">Exact Duplicates (≥0.88)</span>
-                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.exact_duplicate}</span>
-                    </div>
-                    <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 flex flex-col">
-                      <span className="text-xs text-amber-300 font-medium">Strong Similar (0.80-0.88)</span>
-                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.strong_similar}</span>
-                    </div>
-                    <div className="p-4 rounded-xl border border-yellow-500/40 bg-yellow-950/20 flex flex-col">
-                      <span className="text-xs text-yellow-300 font-medium">Moderate Similar (0.70-0.80)</span>
-                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.moderate_similar}</span>
-                    </div>
-                    <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-950/20 flex flex-col">
-                      <span className="text-xs text-emerald-300 font-medium">Distinct (&lt;0.70)</span>
-                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.distinct}</span>
-                    </div>
-                  </div>
+            return (
+              <div className="flex flex-col gap-6 animate-fade-in">
+                {crossPathMode === 'easy' ? (
+                  <div className="flex flex-col gap-6">
+                    {/* Easy Path Bin Summary Cards */}
+                    <div className="flex flex-col gap-4 rounded-xl border border-border bg-abyss/80 p-6 shadow-md">
+                      <h4 className="text-sm font-bold text-accent-bright flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-amber-400" /> Semantic Similarity Bins Overview
+                      </h4>
+                      <p className="text-xs text-text-muted">Candidate pairs classified by Harrier semantic cosine thresholds:</p>
 
-                  <div className="flex items-center gap-2 pt-2">
-                    <span className="text-xs font-medium text-text-secondary">Filter Table by Bin:</span>
-                    {['All', 'exact_duplicate', 'strong_similar', 'moderate_similar', 'distinct'].map((b) => (
-                      <button
-                        key={b}
-                        onClick={() => setCrossBinFilter(b)}
-                        className={`px-3 py-1 rounded text-xs font-mono border transition-colors ${
-                          crossBinFilter === b ? 'bg-accent text-white border-accent-bright' : 'bg-elevated/40 text-text-secondary border-border'
-                        }`}
-                      >
-                        {b}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <Sliders className="h-4 w-4 text-cyan-400" /> Interactive Multi-Gate Batch Overview
-                  </h4>
-                  <p className="text-xs text-text-muted">Click any multi-gate action button below to dynamically slice the batch similarity matrix:</p>
-                  
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => setCrossGateFilter('similar_text')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'similar_text' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      📝 Similar Text Only ({crossResult.summary.gate_counts.similar_text})
-                    </button>
-                    <button
-                      onClick={() => setCrossGateFilter('similar_date')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'similar_date' ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      📅 Similar Date Only ({crossResult.summary.gate_counts.similar_date})
-                    </button>
-                    <button
-                      onClick={() => setCrossGateFilter('similar_location')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'similar_location' ? 'bg-purple-500/20 border-purple-400 text-purple-200' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      📍 Similar Location Only ({crossResult.summary.gate_counts.similar_location})
-                    </button>
-                    <button
-                      onClick={() => setCrossGateFilter('similar_both')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'similar_both' ? 'bg-pink-500/20 border-pink-400 text-pink-200' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      ⚡ Similar Both (Spatial+Temporal) ({crossResult.summary.gate_counts.similar_both})
-                    </button>
-                    <button
-                      onClick={() => setCrossGateFilter('similar_all')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'similar_all' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      🎯 Similar All / Duplicates ({crossResult.summary.gate_counts.similar_all})
-                    </button>
-                    <button
-                      onClick={() => setCrossGateFilter('show_all')}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
-                        crossGateFilter === 'show_all' ? 'bg-accent/30 border-accent-bright text-white' : 'bg-elevated/40 border-border text-text-secondary'
-                      }`}
-                    >
-                      🌐 Show All Evaluated
-                    </button>
-                  </div>
-                </div>
-              )}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div
+                          onClick={() => setCrossBinFilter(crossBinFilter === 'exact_duplicate' ? 'All' : 'exact_duplicate')}
+                          className={`cursor-pointer p-4 rounded-xl border transition-all flex flex-col ${
+                            crossBinFilter === 'exact_duplicate'
+                              ? 'bg-rose-500/20 border-rose-400 shadow-md scale-[1.02]'
+                              : 'bg-elevated/30 border-border/60 hover:border-rose-500/40'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold text-rose-300">Exact Duplicate (≥0.88)</span>
+                          <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.exact_duplicate}</span>
+                        </div>
+                        <div
+                          onClick={() => setCrossBinFilter(crossBinFilter === 'strong_similar' ? 'All' : 'strong_similar')}
+                          className={`cursor-pointer p-4 rounded-xl border transition-all flex flex-col ${
+                            crossBinFilter === 'strong_similar'
+                              ? 'bg-amber-500/20 border-amber-400 shadow-md scale-[1.02]'
+                              : 'bg-elevated/30 border-border/60 hover:border-amber-500/40'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold text-amber-300">Strong Similar (0.80-0.88)</span>
+                          <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.strong_similar}</span>
+                        </div>
+                        <div
+                          onClick={() => setCrossBinFilter(crossBinFilter === 'moderate_similar' ? 'All' : 'moderate_similar')}
+                          className={`cursor-pointer p-4 rounded-xl border transition-all flex flex-col ${
+                            crossBinFilter === 'moderate_similar'
+                              ? 'bg-cyan-500/20 border-cyan-400 shadow-md scale-[1.02]'
+                              : 'bg-elevated/30 border-border/60 hover:border-cyan-500/40'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold text-cyan-300">Moderate Similar (0.70-0.80)</span>
+                          <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.moderate_similar}</span>
+                        </div>
+                        <div
+                          onClick={() => setCrossBinFilter(crossBinFilter === 'distinct' ? 'All' : 'distinct')}
+                          className={`cursor-pointer p-4 rounded-xl border transition-all flex flex-col ${
+                            crossBinFilter === 'distinct'
+                              ? 'bg-emerald-500/20 border-emerald-400 shadow-md scale-[1.02]'
+                              : 'bg-elevated/30 border-border/60 hover:border-emerald-500/40'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold text-emerald-300">Distinct (&lt;0.70)</span>
+                          <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.distinct}</span>
+                        </div>
+                      </div>
 
-              {/* Table of pairs */}
-              <div className="flex flex-col rounded-xl border border-border bg-abyss/90 shadow-lg overflow-hidden">
-                <div className="flex items-center justify-between p-4 border-b border-border bg-elevated/40">
-                  <span className="text-sm font-semibold text-text-primary flex items-center gap-2">
-                    <Database className="h-4 w-4 text-accent-bright" /> Candidate Pair Evaluation Matrix
-                  </span>
-                  <span className="text-xs text-text-muted font-mono">
-                    Showing top similarity matches
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-text-secondary bg-abyss/60 font-mono">
-                        <th className="p-3">Record A ID</th>
-                        <th className="p-3">Record B ID</th>
-                        <th className="p-3">Score</th>
-                        <th className="p-3">Bin Category</th>
-                        <th className="p-3">Distance</th>
-                        <th className="p-3">Date Gap</th>
-                        <th className="p-3">Multi-Gate Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 text-text-primary">
-                      {crossResult.pairs
-                        .filter((p) => {
-                          if (crossPathMode === 'easy' && crossBinFilter !== 'All') {
-                            return p.bin === crossBinFilter;
-                          }
-                          if (crossPathMode === 'hard' && crossGateFilter !== 'show_all') {
-                            if (crossGateFilter === 'similar_text') return p.flags.is_similar_text;
-                            if (crossGateFilter === 'similar_date') return p.flags.is_similar_date;
-                            if (crossGateFilter === 'similar_location') return p.flags.is_similar_location;
-                            if (crossGateFilter === 'similar_both') return p.flags.is_similar_both;
-                            if (crossGateFilter === 'similar_all') return p.flags.is_similar_all;
-                          }
-                          return true;
-                        })
-                        .map((pair, idx) => (
-                          <tr key={idx} className="hover:bg-elevated/30 transition-colors">
-                            <td className="p-3 font-mono text-accent-bright font-semibold">{pair.id_a}</td>
-                            <td className="p-3 font-mono text-text-secondary">{pair.id_b}</td>
-                            <td className="p-3 font-mono font-bold">{(pair.similarity * 100).toFixed(1)}%</td>
-                            <td className="p-3 font-mono">
-                              <span className="px-2 py-0.5 rounded bg-elevated border border-border text-xs">
-                                {pair.bin}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono">{pair.haversine_km !== null ? `${pair.haversine_km} km` : '—'}</td>
-                            <td className="p-3 font-mono">{pair.date_diff_days !== null ? `${pair.date_diff_days} days` : '—'}</td>
-                            <td className="p-3">
-                              <div className="flex gap-1">
-                                <span title="Similar Text" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'opacity-25'}`}>TXT</span>
-                                <span title="Similar Date" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'opacity-25'}`}>DAT</span>
-                                <span title="Similar Location" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'opacity-25'}`}>LOC</span>
-                                <span title="Full Duplicate" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_all ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'opacity-25'}`}>ALL</span>
-                              </div>
-                            </td>
-                          </tr>
+                      <div className="flex items-center gap-2 pt-2">
+                        <span className="text-xs font-medium text-text-secondary">Filter Table by Bin:</span>
+                        {['All', 'exact_duplicate', 'strong_similar', 'moderate_similar', 'distinct'].map((b) => (
+                          <button
+                            key={b}
+                            onClick={() => setCrossBinFilter(b)}
+                            className={`px-3 py-1 rounded text-xs font-mono border transition-colors ${
+                              crossBinFilter === b ? 'bg-accent text-white border-accent-bright' : 'bg-elevated/40 text-text-secondary border-border'
+                            }`}
+                          >
+                            {b}
+                          </button>
                         ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </div>
+                    </div>
+
+                    {/* Simple Table for Easy Path */}
+                    <div className="flex flex-col rounded-xl border border-border bg-abyss/90 shadow-lg overflow-hidden">
+                      <div className="flex items-center justify-between p-4 border-b border-border bg-elevated/40">
+                        <span className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                          <Database className="h-4 w-4 text-accent-bright" /> Candidate Pair Evaluation Matrix
+                        </span>
+                        <span className="text-xs text-text-muted font-mono">
+                          Showing {filteredPairs.length} pairs
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-border text-text-secondary bg-abyss/60 font-mono">
+                              <th className="p-3">Record A ID</th>
+                              <th className="p-3">Record B ID</th>
+                              <th className="p-3">Score</th>
+                              <th className="p-3">Bin Category</th>
+                              <th className="p-3">Distance</th>
+                              <th className="p-3">Date Gap</th>
+                              <th className="p-3">Multi-Gate Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/40 text-text-primary">
+                            {filteredPairs.map((pair, idx) => (
+                              <tr key={idx} className="hover:bg-elevated/30 transition-colors">
+                                <td className="p-3 font-mono text-accent-bright font-semibold">{pair.id_a}</td>
+                                <td className="p-3 font-mono text-text-secondary">{pair.id_b}</td>
+                                <td className="p-3 font-mono font-bold">{(pair.similarity * 100).toFixed(1)}%</td>
+                                <td className="p-3 font-mono">
+                                  <span className="px-2 py-0.5 rounded bg-elevated border border-border text-xs">
+                                    {pair.bin}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-mono">{pair.haversine_km !== null ? `${pair.haversine_km} km` : '—'}</td>
+                                <td className="p-3 font-mono">{pair.date_diff_days !== null ? `${pair.date_diff_days} days` : '—'}</td>
+                                <td className="p-3">
+                                  <div className="flex gap-1">
+                                    <span title="Similar Text" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'opacity-25'}`}>TXT</span>
+                                    <span title="Similar Date" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'opacity-25'}`}>DAT</span>
+                                    <span title="Similar Location" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'opacity-25'}`}>LOC</span>
+                                    <span title="Full Duplicate" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_all ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'opacity-25'}`}>ALL</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Hard Path: Split View Data-Explorer Aligned Database Rows */
+                  <div className="flex flex-col gap-6">
+                    {/* Interactive Multi-Gate Filter Buttons */}
+                    <div className="flex flex-col gap-4 rounded-xl border border-border bg-abyss/80 p-6 shadow-md">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                            <Sliders className="h-4 w-4 text-cyan-400" /> Interactive Multi-Gate Split View & Filter Overview
+                          </h4>
+                          <p className="text-xs text-text-muted mt-0.5">Select a multi-gate filter on the left to slice candidate pairs, and inspect side-by-side aligned database rows on the right:</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-text-secondary font-medium">Right Panel View:</span>
+                          <button
+                            onClick={() => setSplitViewMode('single_pair')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                              splitViewMode === 'single_pair' ? 'bg-accent text-white border-accent-bright shadow' : 'bg-elevated/40 text-text-muted border-border hover:text-white'
+                            }`}
+                          >
+                            Side-by-Side Aligned Inspector
+                          </button>
+                          <button
+                            onClick={() => setSplitViewMode('batch_table')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                              splitViewMode === 'batch_table' ? 'bg-accent text-white border-accent-bright shadow' : 'bg-elevated/40 text-text-muted border-border hover:text-white'
+                            }`}
+                          >
+                            Batch Data-Explorer Table ({filteredPairs.length})
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-border/40">
+                        <button
+                          onClick={() => { setCrossGateFilter('similar_text'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'similar_text' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-cyan-500/40'
+                          }`}
+                        >
+                          📝 Similar Text Only ({crossResult.summary.gate_counts.similar_text})
+                        </button>
+                        <button
+                          onClick={() => { setCrossGateFilter('similar_date'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'similar_date' ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-amber-500/40'
+                          }`}
+                        >
+                          📅 Similar Date Only ({crossResult.summary.gate_counts.similar_date})
+                        </button>
+                        <button
+                          onClick={() => { setCrossGateFilter('similar_location'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'similar_location' ? 'bg-purple-500/20 border-purple-400 text-purple-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-purple-500/40'
+                          }`}
+                        >
+                          📍 Similar Location Only ({crossResult.summary.gate_counts.similar_location})
+                        </button>
+                        <button
+                          onClick={() => { setCrossGateFilter('similar_both'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'similar_both' ? 'bg-pink-500/20 border-pink-400 text-pink-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-pink-500/40'
+                          }`}
+                        >
+                          ⚡ Similar Both (Spatial+Temporal) ({crossResult.summary.gate_counts.similar_both})
+                        </button>
+                        <button
+                          onClick={() => { setCrossGateFilter('similar_all'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'similar_all' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-emerald-500/40'
+                          }`}
+                        >
+                          🎯 Similar All / Duplicates ({crossResult.summary.gate_counts.similar_all})
+                        </button>
+                        <button
+                          onClick={() => { setCrossGateFilter('show_all'); setSelectedPairIndex(0); }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                            crossGateFilter === 'show_all' ? 'bg-accent/30 border-accent-bright text-white shadow-md' : 'bg-elevated/40 border-border text-text-secondary hover:border-accent/50'
+                          }`}
+                        >
+                          🌐 Show All Evaluated ({crossResult.pairs.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Split View Container */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left side: Simplified Output List */}
+                      <div className="lg:col-span-4 flex flex-col rounded-xl border border-border bg-abyss/90 shadow-lg overflow-hidden">
+                        <div className="flex items-center justify-between p-3.5 border-b border-border bg-elevated/40">
+                          <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
+                            <Layers className="h-3.5 w-3.5 text-accent-bright" /> Simplified Candidate Pairs
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-accent/20 border border-accent/40 text-[11px] font-mono text-accent-bright">
+                            {filteredPairs.length} matches
+                          </span>
+                        </div>
+
+                        <div className="max-h-[580px] overflow-y-auto divide-y divide-border/40">
+                          {filteredPairs.length === 0 ? (
+                            <div className="p-6 text-center text-xs text-text-muted">
+                              No candidate pairs match the active multi-gate filter.
+                            </div>
+                          ) : (
+                            filteredPairs.map((pair, idx) => {
+                              const isSelected = activePair && activePair.id_a === pair.id_a && activePair.id_b === pair.id_b;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => setSelectedPairIndex(idx)}
+                                  className={`p-3.5 cursor-pointer transition-all flex flex-col gap-2 ${
+                                    isSelected
+                                      ? 'bg-accent/25 border-l-4 border-accent-bright'
+                                      : 'hover:bg-elevated/40 border-l-4 border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-mono text-xs font-bold text-text-primary flex items-center gap-1.5">
+                                      <span className="text-accent-bright">{pair.id_a}</span>
+                                      <span className="text-text-muted">↔</span>
+                                      <span className="text-text-secondary">{pair.id_b}</span>
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-accent/30 text-accent-bright font-mono text-[11px] font-bold">
+                                      {(pair.similarity * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[11px] text-text-muted">
+                                    <div className="flex gap-1">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'opacity-25'}`}>TXT</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'opacity-25'}`}>DAT</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'opacity-25'}`}>LOC</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_all ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'opacity-25'}`}>ALL</span>
+                                    </div>
+                                    <span className="font-mono text-[10px]">
+                                      {pair.haversine_km !== null ? `${pair.haversine_km}km` : ''} 
+                                      {pair.date_diff_days !== null ? ` | ${pair.date_diff_days}d` : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right side: Aligned Database Rows Data-Explorer */}
+                      <div className="lg:col-span-8 flex flex-col rounded-xl border border-border bg-abyss/90 shadow-lg overflow-hidden">
+                        {splitViewMode === 'single_pair' ? (
+                          activePair ? (
+                            <div className="flex flex-col">
+                              {/* Inspector Header */}
+                              <div className="flex flex-wrap items-center justify-between p-4 border-b border-border bg-elevated/40 gap-3">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-text-primary flex items-center gap-2">
+                                    <Database className="h-4 w-4 text-emerald-400" /> Aligned Database Rows — Pair #{activePair.id_a} vs #{activePair.id_b}
+                                  </span>
+                                  <span className="text-xs text-text-muted mt-0.5">
+                                    Comparing Record A and Record B side-by-side aligned directly from database columns
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="px-2.5 py-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-xs font-mono font-bold">
+                                    Sim: {(activePair.similarity * 100).toFixed(1)}%
+                                  </span>
+                                  {activePair.haversine_km !== null && (
+                                    <span className="px-2.5 py-1 rounded bg-purple-500/20 border border-purple-500/40 text-purple-200 text-xs font-mono font-bold">
+                                      Dist: {activePair.haversine_km} km
+                                    </span>
+                                  )}
+                                  {activePair.date_diff_days !== null && (
+                                    <span className="px-2.5 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-mono font-bold">
+                                      Time Gap: {activePair.date_diff_days} days
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Aligned Side-by-Side Comparison Table */}
+                              <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
+                                <table className="w-full text-left border-collapse text-xs">
+                                  <thead>
+                                    <tr className="border-b border-border text-text-secondary bg-abyss/60 font-mono sticky top-0 backdrop-blur-md">
+                                      <th className="p-3.5 w-1/4">Database Attribute</th>
+                                      <th className="p-3.5 w-3/8 border-l border-border/50 text-accent-bright">
+                                        Database Row A (#{activePair.id_a})
+                                      </th>
+                                      <th className="p-3.5 w-3/8 border-l border-border/50 text-text-primary">
+                                        Database Row B (#{activePair.id_b})
+                                      </th>
+                                      <th className="p-3.5 w-1/6 border-l border-border/50">Multi-Gate Alignment</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border/40 text-text-primary">
+                                    {/* Record ID Row */}
+                                    <tr className="hover:bg-elevated/30 transition-colors">
+                                      <td className="p-3.5 font-semibold font-mono text-text-secondary bg-elevated/10">Primary Record ID</td>
+                                      <td className="p-3.5 font-mono text-accent-bright border-l border-border/50 font-bold">{activePair.id_a}</td>
+                                      <td className="p-3.5 font-mono text-text-primary border-l border-border/50 font-bold">{activePair.id_b}</td>
+                                      <td className="p-3.5 border-l border-border/50 text-text-muted font-mono">Candidate Pair</td>
+                                    </tr>
+
+                                    {/* Witness Notes / Narrative Row */}
+                                    <tr className="hover:bg-elevated/30 transition-colors bg-accent/5">
+                                      <td className="p-3.5 font-semibold text-text-primary align-top bg-elevated/10">
+                                        Witness Notes / Narrative Text
+                                      </td>
+                                      <td className="p-3.5 text-text-primary border-l border-border/50 leading-relaxed align-top">
+                                        {activePair.row_a?.witness_notes || activePair.row_a?.narrative || activePair.text_a_preview || '—'}
+                                      </td>
+                                      <td className="p-3.5 text-text-primary border-l border-border/50 leading-relaxed align-top">
+                                        {activePair.row_b?.witness_notes || activePair.row_b?.narrative || activePair.text_b_preview || '—'}
+                                      </td>
+                                      <td className="p-3.5 border-l border-border/50 align-top">
+                                        <span className={`px-2 py-1 rounded text-xs font-mono font-bold block text-center ${
+                                          activePair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'bg-elevated text-text-muted border border-border'
+                                        }`}>
+                                          {activePair.flags.is_similar_text ? '✅ GATE PASSED' : '❌ BELOW THRESH'}
+                                          <span className="block text-[10px] font-normal mt-0.5">{(activePair.similarity * 100).toFixed(1)}% Cosine</span>
+                                        </span>
+                                      </td>
+                                    </tr>
+
+                                    {/* Date & Time Row */}
+                                    <tr className="hover:bg-elevated/30 transition-colors">
+                                      <td className="p-3.5 font-semibold text-text-secondary align-top bg-elevated/10">Timestamp / Date</td>
+                                      <td className="p-3.5 font-mono text-text-primary border-l border-border/50 align-top">
+                                        {String(activePair.row_a?.date_time || activePair.row_a?.date || '—')}
+                                      </td>
+                                      <td className="p-3.5 font-mono text-text-primary border-l border-border/50 align-top">
+                                        {String(activePair.row_b?.date_time || activePair.row_b?.date || '—')}
+                                      </td>
+                                      <td className="p-3.5 border-l border-border/50 align-top">
+                                        {activePair.date_diff_days !== null ? (
+                                          <span className={`px-2 py-1 rounded text-xs font-mono font-bold block text-center ${
+                                            activePair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-elevated text-text-muted border border-border'
+                                          }`}>
+                                            {activePair.flags.is_similar_date ? '✅ GATE PASSED' : '❌ OUT OF RANGE'}
+                                            <span className="block text-[10px] font-normal mt-0.5">Δ {activePair.date_diff_days} days</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-text-muted font-mono text-center block">No Date Data</span>
+                                        )}
+                                      </td>
+                                    </tr>
+
+                                    {/* Coordinates Row */}
+                                    <tr className="hover:bg-elevated/30 transition-colors">
+                                      <td className="p-3.5 font-semibold text-text-secondary align-top bg-elevated/10">Spatial Coordinates</td>
+                                      <td className="p-3.5 font-mono text-text-primary border-l border-border/50 align-top">
+                                        {activePair.row_a?.latitude !== undefined ? `${Number(activePair.row_a.latitude).toFixed(4)}, ${Number(activePair.row_a.longitude).toFixed(4)}` : '—'}
+                                      </td>
+                                      <td className="p-3.5 font-mono text-text-primary border-l border-border/50 align-top">
+                                        {activePair.row_b?.latitude !== undefined ? `${Number(activePair.row_b.latitude).toFixed(4)}, ${Number(activePair.row_b.longitude).toFixed(4)}` : '—'}
+                                      </td>
+                                      <td className="p-3.5 border-l border-border/50 align-top">
+                                        {activePair.haversine_km !== null ? (
+                                          <span className={`px-2 py-1 rounded text-xs font-mono font-bold block text-center ${
+                                            activePair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-elevated text-text-muted border border-border'
+                                          }`}>
+                                            {activePair.flags.is_similar_location ? '✅ GATE PASSED' : '❌ OUT OF RANGE'}
+                                            <span className="block text-[10px] font-normal mt-0.5">Δ {activePair.haversine_km} km</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-text-muted font-mono text-center block">No Lat/Lon</span>
+                                        )}
+                                      </td>
+                                    </tr>
+
+                                    {/* Additional Aligned Database Columns */}
+                                    {(() => {
+                                      const rowAKeys = activePair.row_a ? Object.keys(activePair.row_a) : [];
+                                      const rowBKeys = activePair.row_b ? Object.keys(activePair.row_b) : [];
+                                      const ignoreKeys = ['id', 'locus_tag', 'case_id', 'witness_notes', 'narrative', 'description', 'summary', 'text', 'date_time', 'date', 'datetime', 'latitude', 'lat', 'longitude', 'lon', 'lng'];
+                                      const allOtherKeys = Array.from(new Set([...rowAKeys, ...rowBKeys])).filter(k => !ignoreKeys.includes(k.toLowerCase()));
+
+                                      return allOtherKeys.map((key) => {
+                                        const valA = activePair.row_a?.[key] !== undefined ? String(activePair.row_a[key]) : '—';
+                                        const valB = activePair.row_b?.[key] !== undefined ? String(activePair.row_b[key]) : '—';
+                                        const isExact = valA !== '—' && valB !== '—' && valA.toLowerCase() === valB.toLowerCase();
+
+                                        return (
+                                          <tr key={key} className="hover:bg-elevated/30 transition-colors">
+                                            <td className="p-3.5 font-semibold text-text-secondary align-top bg-elevated/10 capitalize">
+                                              {key.replace(/_/g, ' ')}
+                                            </td>
+                                            <td className="p-3.5 text-text-primary border-l border-border/50 align-top font-mono">
+                                              {valA}
+                                            </td>
+                                            <td className="p-3.5 text-text-primary border-l border-border/50 align-top font-mono">
+                                              {valB}
+                                            </td>
+                                            <td className="p-3.5 border-l border-border/50 align-top">
+                                              {isExact ? (
+                                                <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-bold block text-center">
+                                                  ✅ Exact Match
+                                                </span>
+                                              ) : (
+                                                <span className="text-text-muted text-[11px] font-mono text-center block">
+                                                  Differs
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      });
+                                    })()}
+
+                                    {/* Final Multi-Gate Verdict Row */}
+                                    <tr className="bg-abyss/80 border-t-2 border-border font-bold">
+                                      <td className="p-4 text-accent-bright bg-elevated/20">Full Multi-Gate Verdict</td>
+                                      <td colSpan={2} className="p-4 border-l border-border/50 text-white">
+                                        {activePair.flags.is_similar_all ? (
+                                          <span className="flex items-center gap-2 text-emerald-300">
+                                            <CheckCircle2 className="h-4 w-4" /> Candidate Duplicate — Triggered Text + Spatial + Temporal Convergence
+                                          </span>
+                                        ) : activePair.flags.is_similar_both ? (
+                                          <span className="flex items-center gap-2 text-pink-300">
+                                            <Sliders className="h-4 w-4" /> Strong Spatial + Temporal Correlation (Distinct Narrative)
+                                          </span>
+                                        ) : (
+                                          <span className="text-text-secondary">
+                                            Partial Match — Classified as {activePair.bin.replace(/_/g, ' ')}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="p-4 border-l border-border/50 text-center">
+                                        <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono ${
+                                          activePair.flags.is_similar_all ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400' : 'bg-elevated text-text-secondary border border-border'
+                                        }`}>
+                                          {activePair.flags.is_similar_all ? 'DUPLICATE' : 'DISTINCT'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-12 text-center text-sm text-text-muted">
+                              Select a candidate pair from the left panel to inspect aligned database rows side-by-side.
+                            </div>
+                          )
+                        ) : (
+                          /* Batch Data-Explorer Table View across all filtered pairs */
+                          <div className="flex flex-col">
+                            <div className="flex items-center justify-between p-4 border-b border-border bg-elevated/40">
+                              <span className="text-sm font-bold text-text-primary flex items-center gap-2">
+                                <Database className="h-4 w-4 text-accent-bright" /> Batch Data-Explorer Aligned Table
+                              </span>
+                              <span className="text-xs text-text-muted font-mono">
+                                Showing all {filteredPairs.length} filtered candidate pairs
+                              </span>
+                            </div>
+
+                            <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
+                              <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                  <tr className="border-b border-border text-text-secondary bg-abyss/60 font-mono sticky top-0 backdrop-blur-md">
+                                    <th className="p-3">Pair ID (A ↔ B)</th>
+                                    <th className="p-3">Harrier Sim</th>
+                                    <th className="p-3">Aligned Dates (Row A vs Row B)</th>
+                                    <th className="p-3">Aligned Coordinates (Row A vs Row B)</th>
+                                    <th className="p-3">Side-by-Side Witness Notes Preview</th>
+                                    <th className="p-3">Multi-Gate Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/40 text-text-primary">
+                                  {filteredPairs.map((pair, idx) => (
+                                    <tr
+                                      key={idx}
+                                      onClick={() => { setSelectedPairIndex(idx); setSplitViewMode('single_pair'); }}
+                                      className="hover:bg-elevated/30 transition-colors cursor-pointer"
+                                    >
+                                      <td className="p-3 font-mono font-bold text-accent-bright whitespace-nowrap">
+                                        {pair.id_a} <span className="text-text-muted">↔</span> {pair.id_b}
+                                      </td>
+                                      <td className="p-3 font-mono font-bold">
+                                        {(pair.similarity * 100).toFixed(1)}%
+                                      </td>
+                                      <td className="p-3 font-mono text-[11px] whitespace-nowrap">
+                                        <div><span className="text-emerald-400">A:</span> {String(pair.row_a?.date_time || pair.row_a?.date || '—')}</div>
+                                        <div><span className="text-cyan-400">B:</span> {String(pair.row_b?.date_time || pair.row_b?.date || '—')}</div>
+                                        <div className="text-text-muted text-[10px] mt-0.5">Gap: {pair.date_diff_days ?? '—'}d</div>
+                                      </td>
+                                      <td className="p-3 font-mono text-[11px] whitespace-nowrap">
+                                        <div><span className="text-emerald-400">A:</span> {pair.row_a?.latitude !== undefined ? `${Number(pair.row_a.latitude).toFixed(2)}, ${Number(pair.row_a.longitude).toFixed(2)}` : '—'}</div>
+                                        <div><span className="text-cyan-400">B:</span> {pair.row_b?.latitude !== undefined ? `${Number(pair.row_b.latitude).toFixed(2)}, ${Number(pair.row_b.longitude).toFixed(2)}` : '—'}</div>
+                                        <div className="text-text-muted text-[10px] mt-0.5">Dist: {pair.haversine_km ?? '—'}km</div>
+                                      </td>
+                                      <td className="p-3 text-[11px] max-w-md">
+                                        <div className="line-clamp-1 border-b border-border/30 pb-1 mb-1"><span className="font-bold text-emerald-400">A:</span> {pair.text_a_preview}</div>
+                                        <div className="line-clamp-1"><span className="font-bold text-cyan-400">B:</span> {pair.text_b_preview}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex gap-1">
+                                          <span title="Similar Text" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'opacity-25'}`}>TXT</span>
+                                          <span title="Similar Date" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'opacity-25'}`}>DAT</span>
+                                          <span title="Similar Location" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'opacity-25'}`}>LOC</span>
+                                          <span title="Full Duplicate" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_all ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'opacity-25'}`}>ALL</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>
