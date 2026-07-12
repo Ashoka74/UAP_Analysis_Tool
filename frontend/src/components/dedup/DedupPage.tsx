@@ -8,17 +8,18 @@ import {
   Sparkles,
   Layers,
   Database,
-  ArrowRight,
   ShieldAlert,
 } from 'lucide-react';
 import type {
   SimpleSimilarityResponse,
   SimpleDuplicateResponse,
   AdvancedDedupResponse,
+  CrossDbPipelineResponse,
 } from '../../types';
 
 export function DedupPage() {
-  const [activeTab, setActiveTab] = useState<'simple' | 'advanced'>('simple');
+  const [activeTab, setActiveTab] = useState<'simple' | 'advanced' | 'cross_db'>('simple');
+
 
   // Simple Tab States
   const [textA, setTextA] = useState(
@@ -47,6 +48,48 @@ export function DedupPage() {
   const [useLlmJudge, setUseLlmJudge] = useState(false);
   const [advResult, setAdvResult] = useState<AdvancedDedupResponse | null>(null);
   const [advLoading, setAdvLoading] = useState(false);
+
+  // Cross-DB Pipeline States
+  const [crossPathMode, setCrossPathMode] = useState<'easy' | 'hard'>('easy');
+  const [crossCmpMode, setCrossCmpMode] = useState<'within' | 'between'>('within');
+  const [crossBinFilter, setCrossBinFilter] = useState<string>('All');
+  const [crossGateFilter, setCrossGateFilter] = useState<string>('show_all');
+  const [crossResult, setCrossResult] = useState<CrossDbPipelineResponse | null>(null);
+  const [crossLoading, setCrossLoading] = useState(false);
+
+  const handleRunCrossDb = async () => {
+    setCrossLoading(true);
+    setError(null);
+    try {
+      const sampleRecords = [
+        { id: 'NUFORC-114209', witness_notes: textA, date_time: dateA, latitude: latA, longitude: lonA },
+        { id: 'MUFON-88912', witness_notes: textB, date_time: dateB, latitude: latB, longitude: lonB },
+        { id: 'BLUEBOOK-1092', witness_notes: 'Triangular craft observed near Phoenix airport with silent motion.', date_time: '1997-03-13', latitude: '33.4400', longitude: '-112.0700' },
+        { id: 'NUFORC-67210', witness_notes: 'Green fireball streaked across night sky over California coast.', date_time: '2025-08-14', latitude: '36.7783', longitude: '-119.4179' },
+        { id: 'MUFON-55319', witness_notes: 'Bright green fireball seen exploding high over California ocean.', date_time: '2025-08-14', latitude: '36.7800', longitude: '-119.4100' }
+      ];
+      const res = await fetch('/api/dedup/cross-db/pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          records_a: sampleRecords,
+          records_b: crossCmpMode === 'between' ? sampleRecords.slice(1) : null,
+          cols_a: ['witness_notes'],
+          cols_b: ['witness_notes'],
+          threshold: threshold,
+          max_days: dateDiffDays,
+          max_km: maxKm
+        })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data: CrossDbPipelineResponse = await res.json();
+      setCrossResult(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCrossLoading(false);
+    }
+  };
 
   // API Call: Check Similarity
   const handleCheckSimilarity = async () => {
@@ -167,6 +210,17 @@ export function DedupPage() {
           >
             <Layers className="h-4 w-4" />
             Advanced Dedupe Studio (Batch Clustering)
+          </button>
+          <button
+            onClick={() => setActiveTab('cross_db')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-t-lg font-medium text-sm transition-all duration-200 ${
+              activeTab === 'cross_db'
+                ? 'bg-accent/20 text-accent-bright border-b-2 border-accent-bright shadow-sm'
+                : 'text-text-secondary hover:text-text-primary hover:bg-elevated/40'
+            }`}
+          >
+            <Database className="h-4 w-4" />
+            Cross-DB Pipeline (Easy vs Hard Path)
           </button>
         </div>
       </div>
@@ -591,6 +645,261 @@ export function DedupPage() {
           )}
         </div>
       )}
+
+      {/* CROSS-DB TAB */}
+      {activeTab === 'cross_db' && (
+        <div className="flex flex-col gap-6 animate-fade-in">
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-abyss/80 p-6 shadow-md">
+            <h3 className="text-lg font-bold text-accent-bright flex items-center gap-2">
+              <Database className="h-5 w-5" /> Cross-DB Similarity & Deduplication Pipeline
+            </h3>
+            <p className="text-xs text-text-secondary">
+              Compare candidate records either within a single dataset or across two distinct databases using Harrier cosine similarities. Choose your screening workflow:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div
+                onClick={() => setCrossPathMode('easy')}
+                className={`cursor-pointer p-4 rounded-xl border transition-all ${
+                  crossPathMode === 'easy'
+                    ? 'border-accent-bright bg-accent/20 shadow-md'
+                    : 'border-border/60 bg-elevated/40 hover:border-border'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-sm text-text-primary">
+                  <Sparkles className="h-4 w-4 text-amber-400" /> a. Easy Path: Semantic Similarity Bins
+                </div>
+                <p className="text-xs text-text-muted mt-1">
+                  Automatically classify candidate pairs into Exact Duplicates (≥0.88), Strong Similar (0.80-0.88), Moderate Similar (0.70-0.80), and Distinct (&lt;0.70).
+                </p>
+              </div>
+
+              <div
+                onClick={() => setCrossPathMode('hard')}
+                className={`cursor-pointer p-4 rounded-xl border transition-all ${
+                  crossPathMode === 'hard'
+                    ? 'border-accent-bright bg-accent/20 shadow-md'
+                    : 'border-border/60 bg-elevated/40 hover:border-border'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-sm text-text-primary">
+                  <Sliders className="h-4 w-4 text-cyan-400" /> b. Hard Path: Interactive Multi-Gate Overview
+                </div>
+                <p className="text-xs text-text-muted mt-1">
+                  Manual batch oversight with dynamic toggle buttons for Similar Text, Similar Date, Similar Location, Similar Both, or Similar All (Full Convergence).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 pt-2 border-t border-border/50">
+              <span className="text-xs font-semibold text-text-secondary">Comparison Scope:</span>
+              <button
+                onClick={() => setCrossCmpMode('within')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  crossCmpMode === 'within' ? 'bg-accent/30 border-accent-bright text-white' : 'bg-elevated/40 border-border text-text-muted'
+                }`}
+              >
+                Within Dataset (DB1 vs DB1)
+              </button>
+              <button
+                onClick={() => setCrossCmpMode('between')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  crossCmpMode === 'between' ? 'bg-accent/30 border-accent-bright text-white' : 'bg-elevated/40 border-border text-text-muted'
+                }`}
+              >
+                Between Datasets (DB1 vs DB2)
+              </button>
+            </div>
+
+            <div className="flex justify-start pt-2">
+              <button
+                onClick={handleRunCrossDb}
+                disabled={crossLoading}
+                className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-semibold text-sm text-white hover:bg-accent-bright transition-all shadow-lg disabled:opacity-50"
+              >
+                <Play className="h-4 w-4" />
+                {crossLoading ? 'Running Harrier Cross-DB Pipeline...' : 'Execute Cross-DB Similarity Pipeline'}
+              </button>
+            </div>
+          </div>
+
+          {crossResult && (
+            <div className="flex flex-col gap-6 animate-fade-in">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-sm">
+                <span className="flex items-center gap-2 font-semibold">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Evaluated {crossResult.summary.total_pairs_evaluated} cross-database candidate pairs!
+                </span>
+                <span className="text-xs font-mono">Mode: {crossResult.mode}</span>
+              </div>
+
+              {crossPathMode === 'easy' ? (
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-400" /> Semantic Similarity Bins Summary
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 rounded-xl border border-red-500/40 bg-red-950/20 flex flex-col">
+                      <span className="text-xs text-red-300 font-medium">Exact Duplicates (≥0.88)</span>
+                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.exact_duplicate}</span>
+                    </div>
+                    <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 flex flex-col">
+                      <span className="text-xs text-amber-300 font-medium">Strong Similar (0.80-0.88)</span>
+                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.strong_similar}</span>
+                    </div>
+                    <div className="p-4 rounded-xl border border-yellow-500/40 bg-yellow-950/20 flex flex-col">
+                      <span className="text-xs text-yellow-300 font-medium">Moderate Similar (0.70-0.80)</span>
+                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.moderate_similar}</span>
+                    </div>
+                    <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-950/20 flex flex-col">
+                      <span className="text-xs text-emerald-300 font-medium">Distinct (&lt;0.70)</span>
+                      <span className="text-2xl font-bold font-mono text-white mt-1">{crossResult.summary.bins.distinct}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <span className="text-xs font-medium text-text-secondary">Filter Table by Bin:</span>
+                    {['All', 'exact_duplicate', 'strong_similar', 'moderate_similar', 'distinct'].map((b) => (
+                      <button
+                        key={b}
+                        onClick={() => setCrossBinFilter(b)}
+                        className={`px-3 py-1 rounded text-xs font-mono border transition-colors ${
+                          crossBinFilter === b ? 'bg-accent text-white border-accent-bright' : 'bg-elevated/40 text-text-secondary border-border'
+                        }`}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                    <Sliders className="h-4 w-4 text-cyan-400" /> Interactive Multi-Gate Batch Overview
+                  </h4>
+                  <p className="text-xs text-text-muted">Click any multi-gate action button below to dynamically slice the batch similarity matrix:</p>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setCrossGateFilter('similar_text')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'similar_text' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      📝 Similar Text Only ({crossResult.summary.gate_counts.similar_text})
+                    </button>
+                    <button
+                      onClick={() => setCrossGateFilter('similar_date')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'similar_date' ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      📅 Similar Date Only ({crossResult.summary.gate_counts.similar_date})
+                    </button>
+                    <button
+                      onClick={() => setCrossGateFilter('similar_location')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'similar_location' ? 'bg-purple-500/20 border-purple-400 text-purple-200' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      📍 Similar Location Only ({crossResult.summary.gate_counts.similar_location})
+                    </button>
+                    <button
+                      onClick={() => setCrossGateFilter('similar_both')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'similar_both' ? 'bg-pink-500/20 border-pink-400 text-pink-200' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      ⚡ Similar Both (Spatial+Temporal) ({crossResult.summary.gate_counts.similar_both})
+                    </button>
+                    <button
+                      onClick={() => setCrossGateFilter('similar_all')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'similar_all' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-md' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      🎯 Similar All / Duplicates ({crossResult.summary.gate_counts.similar_all})
+                    </button>
+                    <button
+                      onClick={() => setCrossGateFilter('show_all')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 ${
+                        crossGateFilter === 'show_all' ? 'bg-accent/30 border-accent-bright text-white' : 'bg-elevated/40 border-border text-text-secondary'
+                      }`}
+                    >
+                      🌐 Show All Evaluated
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Table of pairs */}
+              <div className="flex flex-col rounded-xl border border-border bg-abyss/90 shadow-lg overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-border bg-elevated/40">
+                  <span className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                    <Database className="h-4 w-4 text-accent-bright" /> Candidate Pair Evaluation Matrix
+                  </span>
+                  <span className="text-xs text-text-muted font-mono">
+                    Showing top similarity matches
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-text-secondary bg-abyss/60 font-mono">
+                        <th className="p-3">Record A ID</th>
+                        <th className="p-3">Record B ID</th>
+                        <th className="p-3">Score</th>
+                        <th className="p-3">Bin Category</th>
+                        <th className="p-3">Distance</th>
+                        <th className="p-3">Date Gap</th>
+                        <th className="p-3">Multi-Gate Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40 text-text-primary">
+                      {crossResult.pairs
+                        .filter((p) => {
+                          if (crossPathMode === 'easy' && crossBinFilter !== 'All') {
+                            return p.bin === crossBinFilter;
+                          }
+                          if (crossPathMode === 'hard' && crossGateFilter !== 'show_all') {
+                            if (crossGateFilter === 'similar_text') return p.flags.is_similar_text;
+                            if (crossGateFilter === 'similar_date') return p.flags.is_similar_date;
+                            if (crossGateFilter === 'similar_location') return p.flags.is_similar_location;
+                            if (crossGateFilter === 'similar_both') return p.flags.is_similar_both;
+                            if (crossGateFilter === 'similar_all') return p.flags.is_similar_all;
+                          }
+                          return true;
+                        })
+                        .map((pair, idx) => (
+                          <tr key={idx} className="hover:bg-elevated/30 transition-colors">
+                            <td className="p-3 font-mono text-accent-bright font-semibold">{pair.id_a}</td>
+                            <td className="p-3 font-mono text-text-secondary">{pair.id_b}</td>
+                            <td className="p-3 font-mono font-bold">{(pair.similarity * 100).toFixed(1)}%</td>
+                            <td className="p-3 font-mono">
+                              <span className="px-2 py-0.5 rounded bg-elevated border border-border text-xs">
+                                {pair.bin}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono">{pair.haversine_km !== null ? `${pair.haversine_km} km` : '—'}</td>
+                            <td className="p-3 font-mono">{pair.date_diff_days !== null ? `${pair.date_diff_days} days` : '—'}</td>
+                            <td className="p-3">
+                              <div className="flex gap-1">
+                                <span title="Similar Text" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_text ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'opacity-25'}`}>TXT</span>
+                                <span title="Similar Date" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_date ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'opacity-25'}`}>DAT</span>
+                                <span title="Similar Location" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_location ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'opacity-25'}`}>LOC</span>
+                                <span title="Full Duplicate" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${pair.flags.is_similar_all ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'opacity-25'}`}>ALL</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+

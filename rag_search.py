@@ -2760,6 +2760,141 @@ with tab_rag:
                             r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
                             return f"rgba({r},{g},{b},{alpha})"
 
+                        def _render_dual_path_dedup(pair_res_dict, current_thr, kp):
+                            st.markdown("### 🧬 Cross-DB Deduplication Pipeline (`Easy Path` vs `Hard Path`)")
+                            st.caption("Inspect similarity candidates using either interval-based semantic bins or multi-gate spatial/temporal/text boolean filters.")
+                            
+                            path_sel = st.radio(
+                                "Select Workflow Path:",
+                                [
+                                    "⚡ a. Easy Path: Automated Semantic Similarity Bins",
+                                    "🎛️ b. Hard Path: Interactive Multi-Gate Batch Overview"
+                                ],
+                                key=f"dp_path_sel_{kp}"
+                            )
+                            
+                            extracted_pairs = []
+                            for pk, pres in pair_res_dict.items():
+                                ts, ti = pres['top_scores'], pres['top_idx']
+                                dfa, dfb = pres['db_a']['df'], pres['db_b']['df']
+                                name_a, name_b = pres['db_a']['name'], pres['db_b']['name']
+                                
+                                # Find lat/lon/date columns once per dataframe
+                                lca = next((c for c in ["latitude", "lat"] if c in dfa.columns), "")
+                                oca = next((c for c in ["longitude", "lon"] if c in dfa.columns), "")
+                                dca = next((c for c in ["date_time", "date"] if c in dfa.columns), "")
+                                lcb = next((c for c in ["latitude", "lat"] if c in dfb.columns), "")
+                                ocb = next((c for c in ["longitude", "lon"] if c in dfb.columns), "")
+                                dcb = next((c for c in ["date_time", "date"] if c in dfb.columns), "")
+                                
+                                for i in range(len(ts)):
+                                    for j in range(ts.shape[1]):
+                                        sim = float(ts[i, j])
+                                        if sim >= 0.60:
+                                            row_b_idx = int(ti[i, j])
+                                            ra, rb = dfa.iloc[i], dfb.iloc[row_b_idx]
+                                            
+                                            km_val = None
+                                            if lca and oca and lcb and ocb:
+                                                try:
+                                                    l1, o1 = float(ra[lca]), float(ra[oca])
+                                                    l2, o2 = float(rb[lcb]), float(rb[ocb])
+                                                    km_val = round(_haversine_km(l1, o1, l2, o2), 2)
+                                                except Exception:
+                                                    pass
+                                                    
+                                            day_val = None
+                                            if dca and dcb:
+                                                da = _parse_date(ra[dca])
+                                                db = _parse_date(rb[dcb])
+                                                if da and db:
+                                                    day_val = abs((da - db).days)
+                                                    
+                                            b_lbl = "distinct"
+                                            if sim >= 0.88: b_lbl = "exact_duplicate"
+                                            elif sim >= 0.80: b_lbl = "strong_similar"
+                                            elif sim >= 0.70: b_lbl = "moderate_similar"
+                                            
+                                            is_txt = bool(sim >= current_thr)
+                                            is_dt = bool(day_val is not None and day_val <= 3)
+                                            is_loc = bool(km_val is not None and km_val <= 50.0)
+                                            is_both = bool(is_dt and is_loc)
+                                            is_all = bool(is_txt and is_both)
+                                            
+                                            extracted_pairs.append({
+                                                "db_pair": f"{name_a} ↔ {name_b}",
+                                                "row_a": int(i),
+                                                "row_b": int(row_b_idx),
+                                                "similarity": round(sim, 4),
+                                                "bin": b_lbl,
+                                                "km": km_val,
+                                                "days": day_val,
+                                                "is_similar_text": is_txt,
+                                                "is_similar_date": is_dt,
+                                                "is_similar_location": is_loc,
+                                                "is_similar_both": is_both,
+                                                "is_similar_all": is_all
+                                            })
+                            if not extracted_pairs:
+                                st.info("No candidates evaluated above 0.60 similarity.")
+                                return
+                                
+                            bin_counts = {"exact_duplicate": 0, "strong_similar": 0, "moderate_similar": 0, "distinct": 0}
+                            gate_counts = {"similar_text": 0, "similar_date": 0, "similar_location": 0, "similar_both": 0, "similar_all": 0}
+                            for ep in extracted_pairs:
+                                if ep["bin"] in bin_counts: bin_counts[ep["bin"]] += 1
+                                if ep["is_similar_text"]: gate_counts["similar_text"] += 1
+                                if ep["is_similar_date"]: gate_counts["similar_date"] += 1
+                                if ep["is_similar_location"]: gate_counts["similar_location"] += 1
+                                if ep["is_similar_both"]: gate_counts["similar_both"] += 1
+                                if ep["is_similar_all"]: gate_counts["similar_all"] += 1
+                                
+                            if path_sel.startswith("⚡ a. Easy Path"):
+                                st.markdown("#### 📊 Semantic Similarity Bins Overview")
+                                bc1, bc2, bc3, bc4 = st.columns(4)
+                                bc1.metric("🔴 Exact Duplicates (≥ 0.88)", bin_counts["exact_duplicate"])
+                                bc2.metric("🟠 Strong Similar (0.80 - 0.88)", bin_counts["strong_similar"])
+                                bc3.metric("🟡 Moderate Similar (0.70 - 0.80)", bin_counts["moderate_similar"])
+                                bc4.metric("🟢 Distinct (< 0.70)", bin_counts["distinct"])
+                                
+                                b_filt = st.selectbox("Filter Table by Bin Category:", ["All", "exact_duplicate", "strong_similar", "moderate_similar", "distinct"], key=f"dp_bfilt_{kp}")
+                                f_eps = extracted_pairs if b_filt == "All" else [e for e in extracted_pairs if e["bin"] == b_filt]
+                                if f_eps:
+                                    df_disp = pd.DataFrame(f_eps)[["db_pair", "row_a", "row_b", "similarity", "bin", "km", "days"]]
+                                    df_disp["similarity"] = df_disp["similarity"].apply(lambda x: f"{x*100:.1f}%")
+                                    df_disp.columns = ["Databases", "Row A Index", "Row B Index", "Score", "Bin", "Distance (km)", "Date Diff (days)"]
+                                    st.dataframe(df_disp, use_container_width=True)
+                                else:
+                                    st.info("No candidates inside this bin.")
+                            else:
+                                st.markdown("#### 🎛️ Interactive Multi-Gate Batch Overview")
+                                g_filt = st.radio(
+                                    "Filter Batch by Multi-Gate Action:",
+                                    [
+                                        f"📝 Similar Text Only (`sim ≥ {int(current_thr*100)}%`) — [{gate_counts['similar_text']} pairs]",
+                                        f"📅 Similar Date Only (`± 3 days`) — [{gate_counts['similar_date']} pairs]",
+                                        f"📍 Similar Location Only (`≤ 50 km`) — [{gate_counts['similar_location']} pairs]",
+                                        f"⚡ Similar Both (`Spatial + Temporal`) — [{gate_counts['similar_both']} pairs]",
+                                        f"🎯 Similar All / Flagged Duplicates (`Full Convergence`) — [{gate_counts['similar_all']} pairs]",
+                                        "🌐 Show All Candidates"
+                                    ],
+                                    key=f"dp_gfilt_{kp}"
+                                )
+                                f_eps = extracted_pairs
+                                if g_filt.startswith("📝"): f_eps = [e for e in extracted_pairs if e["is_similar_text"]]
+                                elif g_filt.startswith("📅"): f_eps = [e for e in extracted_pairs if e["is_similar_date"]]
+                                elif g_filt.startswith("📍"): f_eps = [e for e in extracted_pairs if e["is_similar_location"]]
+                                elif g_filt.startswith("⚡"): f_eps = [e for e in extracted_pairs if e["is_similar_both"]]
+                                elif g_filt.startswith("🎯"): f_eps = [e for e in extracted_pairs if e["is_similar_all"]]
+                                
+                                if f_eps:
+                                    df_disp = pd.DataFrame(f_eps)[["db_pair", "row_a", "row_b", "similarity", "km", "days"]]
+                                    df_disp["similarity"] = df_disp["similarity"].apply(lambda x: f"{x*100:.1f}%")
+                                    df_disp.columns = ["Databases", "Row A Index", "Row B Index", "Similarity", "Distance (km)", "Date Diff (days)"]
+                                    st.dataframe(df_disp, use_container_width=True)
+                                else:
+                                    st.warning("No candidate pairs satisfied this multi-gate button selection.")
+
                         pair_labels = {k: f"{v['db_a']['name']} ↔ {v['db_b']['name']}" for k, v in all_pairs.items()}
                         view_options = (["All"] + list(pair_labels.values())) if len(all_pairs) > 1 else list(pair_labels.values())
                         sel_label = st.selectbox("View", view_options, key="xdb_pair_sel")
@@ -2794,9 +2929,9 @@ with tab_rag:
                                     f"{matched_b}/{total_b}",
                                 )
 
-                            tab_hist, tab_pairs, tab_sankey, tab_thr = st.tabs(
+                            tab_hist, tab_pairs, tab_sankey, tab_thr, tab_dedup = st.tabs(
                                 ["📊 Score Distribution", "🔀 Matched Pairs",
-                                 "🌊 Sankey", "🎯 Suggest Threshold"]
+                                 "🌊 Sankey", "🎯 Suggest Threshold", "🧬 Dedupe & Similarity Bins (Easy vs Hard)"]
                             )
 
                             with tab_hist:
@@ -2970,6 +3105,9 @@ with tab_rag:
                             with tab_thr:
                                 _threshold_tab_all(all_pairs, GEMINI_KEY, pct)
 
+                            with tab_dedup:
+                                _render_dual_path_dedup(all_pairs, thr, "all")
+
                         else:
                             # ── Single pair view ───────────────────────────────────────
                             sel_key    = next(k for k, v in pair_labels.items() if v == sel_label)
@@ -2991,9 +3129,9 @@ with tab_rag:
                             m3c.metric(f"{res['db_b']['name']} coverage",
                                        f"{len(matched2)/len(corp)*100:.1f}%", f"{len(matched2)}/{len(corp)}")
 
-                            tab_hist, tab_pairs, tab_sankey, tab_thr = st.tabs(
+                            tab_hist, tab_pairs, tab_sankey, tab_thr, tab_dedup = st.tabs(
                                 ["📊 Score Distribution", "🔀 Matched Pairs",
-                                 "🌊 Sankey", "🎯 Suggest Threshold"]
+                                 "🌊 Sankey", "🎯 Suggest Threshold", "🧬 Dedupe & Similarity Bins (Easy vs Hard)"]
                             )
 
                             with tab_hist:
@@ -3199,3 +3337,7 @@ with tab_rag:
 
                             with tab_thr:
                                 _threshold_tab(res, sel_key, GEMINI_KEY, pct)
+
+                            with tab_dedup:
+                                _render_dual_path_dedup({sel_key: res}, thr, f"sel_{sel_key[0]}_{sel_key[1]}")
+

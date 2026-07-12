@@ -253,3 +253,169 @@ def run_advanced_dedup(
         },
         "flagged_pairs": flagged_pairs
     }
+
+
+def run_cross_db_pipeline(
+    records_a: List[Dict[str, Any]],
+    records_b: Optional[List[Dict[str, Any]]] = None,
+    cols_a: Optional[List[str]] = None,
+    cols_b: Optional[List[str]] = None,
+    threshold: float = 0.80,
+    max_days: int = 3,
+    max_km: float = 50.0,
+    top_k: int = 5,
+    max_pairs: int = 500
+) -> Dict[str, Any]:
+    """
+    Cross-DB Similarity & Deduplication Pipeline supporting dual-path workflows:
+    - Easy Path: Semantic similarity binning ('exact_duplicate', 'strong_similar', 'moderate_similar', 'distinct')
+    - Hard Path: Interactive multi-gate boolean flags ('is_similar_text', 'is_similar_date', 'is_similar_location', 'is_similar_both', 'is_similar_all')
+    """
+    if not records_a:
+        return {"status": "error", "message": "No candidate records provided for Dataset A."}
+        
+    mode = "between_datasets" if (records_b is not None and len(records_b) > 0) else "within_dataset"
+    if mode == "within_dataset":
+        records_b = records_a
+        cols_b = cols_a
+        
+    cols_a = cols_a or ["witness.notes", "description", "case_text.text", "narrative", "text"]
+    cols_b = cols_b or cols_a
+    
+    def _build_text(rec: Dict[str, Any], cols: List[str]) -> str:
+        parts = []
+        for c in cols:
+            v = str(rec.get(c, "")).strip()
+            if v and v.lower() not in ("nan", "none", "null"):
+                parts.append(v)
+        if not parts:
+            # Fallback to any narrative text
+            for fallback in ("narrative", "text", "description", "witness.notes"):
+                v = str(rec.get(fallback, "")).strip()
+                if v and v.lower() not in ("nan", "none", "null"):
+                    parts.append(v)
+                    break
+        return " - ".join(parts) if parts else "Unknown Report"
+
+    # Limit batch size for immediate API responsiveness if over 500 rows
+    max_eval_rows = min(500, len(records_a))
+    eval_a = records_a[:max_eval_rows]
+    eval_b = records_b[:min(500, len(records_b))]
+    
+    texts_a = [_build_text(r, cols_a) for r in eval_a]
+    texts_b = [_build_text(r, cols_b) for r in eval_b] if mode == "between_datasets" else texts_a
+    
+    # Encode batches
+    vecs_a = np.array([_encode_text(t) for t in texts_a], dtype=np.float32)
+    vecs_b = np.array([_encode_text(t) for t in texts_b], dtype=np.float32) if mode == "between_datasets" else vecs_a
+    
+    # Cosine similarity matrix via matrix multiplication
+    norms_a = np.linalg.norm(vecs_a, axis=1, keepdims=True)
+    norms_b = np.linalg.norm(vecs_b, axis=1, keepdims=True)
+    norms_a[norms_a == 0] = 1e-10
+    norms_b[norms_b == 0] = 1e-10
+    
+    sim_matrix = np.dot(vecs_a / norms_a, (vecs_b / norms_b).T)
+    if mode == "within_dataset":
+        np.fill_diagonal(sim_matrix, -1.0)
+        
+    pairs = []
+    # Collect candidate pairs
+    for i in range(len(eval_a)):
+        row_sims = sim_matrix[i]
+        top_indices = np.argsort(row_sims)[::-1][:top_k]
+        for j in top_indices:
+            sim = float(row_sims[j])
+            if sim < 0.60:
+                continue
+                
+            rec_a = eval_a[i]
+            rec_b = eval_b[j]
+            id_a = str(rec_a.get("id") or rec_a.get("case_id") or f"A-{i+1}")
+            id_b = str(rec_b.get("id") or rec_b.get("case_id") or f"B-{j+1}")
+            
+            # Distance calculation
+            haversine_km = None
+            try:
+                l1 = float(rec_a.get("latitude") or rec_a.get("lat"))
+                o1 = float(rec_a.get("longitude") or rec_a.get("lon"))
+                l2 = float(rec_b.get("latitude") or rec_b.get("lat"))
+                o2 = float(rec_b.get("longitude") or rec_b.get("lon"))
+                haversine_km = round(_haversine_km(l1, o1, l2, o2), 2)
+            except (ValueError, TypeError):
+                pass
+                
+            # Date difference calculation
+            date_diff_days = None
+            da = _parse_date(rec_a.get("date_time") or rec_a.get("date"))
+            db = _parse_date(rec_b.get("date_time") or rec_b.get("date"))
+            if da and db:
+                date_diff_days = abs((da - db).days)
+                
+            # Easy Path: Semantic Binning
+            bin_label = "distinct"
+            if sim >= 0.88:
+                bin_label = "exact_duplicate"
+            elif sim >= 0.80:
+                bin_label = "strong_similar"
+            elif sim >= 0.70:
+                bin_label = "moderate_similar"
+                
+            # Hard Path: Multi-Gate Boolean Flags
+            is_similar_text = bool(sim >= threshold)
+            is_similar_date = bool(date_diff_days is not None and date_diff_days <= max_days)
+            is_similar_location = bool(haversine_km is not None and haversine_km <= max_km)
+            is_similar_both = bool(is_similar_date and is_similar_location)
+            is_similar_all = bool(is_similar_text and is_similar_both)
+            
+            pairs.append({
+                "id_a": id_a,
+                "id_b": id_b,
+                "similarity": round(sim, 4),
+                "bin": bin_label,
+                "haversine_km": haversine_km,
+                "date_diff_days": date_diff_days,
+                "text_a_preview": texts_a[i][:180] + ("..." if len(texts_a[i]) > 180 else ""),
+                "text_b_preview": texts_b[j][:180] + ("..." if len(texts_b[j]) > 180 else ""),
+                "flags": {
+                    "is_similar_text": is_similar_text,
+                    "is_similar_date": is_similar_date,
+                    "is_similar_location": is_similar_location,
+                    "is_similar_both": is_similar_both,
+                    "is_similar_all": is_similar_all
+                }
+            })
+            if len(pairs) >= max_pairs:
+                break
+        if len(pairs) >= max_pairs:
+            break
+            
+    # Sort pairs descending by similarity
+    pairs.sort(key=lambda x: x["similarity"], reverse=True)
+    
+    # Calculate summary KPIs across Easy & Hard paths
+    bin_counts = {"exact_duplicate": 0, "strong_similar": 0, "moderate_similar": 0, "distinct": 0}
+    gate_counts = {"similar_text": 0, "similar_date": 0, "similar_location": 0, "similar_both": 0, "similar_all": 0}
+    
+    for p in pairs:
+        b = p["bin"]
+        if b in bin_counts:
+            bin_counts[b] += 1
+        f = p["flags"]
+        if f["is_similar_text"]: gate_counts["similar_text"] += 1
+        if f["is_similar_date"]: gate_counts["similar_date"] += 1
+        if f["is_similar_location"]: gate_counts["similar_location"] += 1
+        if f["is_similar_both"]: gate_counts["similar_both"] += 1
+        if f["is_similar_all"]: gate_counts["similar_all"] += 1
+        
+    return {
+        "status": "success",
+        "mode": mode,
+        "summary": {
+            "total_pairs_evaluated": len(pairs),
+            "bins": bin_counts,
+            "gate_counts": gate_counts
+        },
+        "pairs": pairs
+    }
+

@@ -6,6 +6,7 @@ import logging
 import traceback
 from datetime import datetime, timezone
 import uuid
+from typing import Optional, List, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -1723,4 +1724,35 @@ def run_dedup_advanced(req: DedupAdvancedRequest):
         )
     except Exception as e:
         logger.error(f"Advanced dedup run failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DedupCrossDbRequest(BaseModel):
+    records_a: list[dict]
+    records_b: Optional[list[dict]] = None
+    cols_a: Optional[list[str]] = None
+    cols_b: Optional[list[str]] = None
+    threshold: float = 0.80
+    max_days: int = 3
+    max_km: float = 50.0
+    top_k: int = 5
+    max_pairs: int = 500
+
+
+@app.post("/api/dedup/cross-db/pipeline")
+def run_dedup_cross_db_pipeline(req: DedupCrossDbRequest):
+    try:
+        return dedup_service.run_cross_db_pipeline(
+            records_a=req.records_a,
+            records_b=req.records_b,
+            cols_a=req.cols_a,
+            cols_b=req.cols_b,
+            threshold=req.threshold,
+            max_days=req.max_days,
+            max_km=req.max_km,
+            top_k=req.top_k,
+            max_pairs=req.max_pairs
+        )
+    except Exception as e:
+        logger.error(f"Cross-DB dedup pipeline failed: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))

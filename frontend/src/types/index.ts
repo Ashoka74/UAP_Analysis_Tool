@@ -435,3 +435,44 @@ export interface AdvancedDedupResponse {
   };
   flagged_pairs: FlaggedPair[];
 }
+
+export interface CrossDbPair {
+  id_a: string;
+  id_b: string;
+  similarity: number;
+  bin: 'exact_duplicate' | 'strong_similar' | 'moderate_similar' | 'distinct';
+  haversine_km: number | null;
+  date_diff_days: number | null;
+  text_a_preview: string;
+  text_b_preview: string;
+  flags: {
+    is_similar_text: boolean;
+    is_similar_date: boolean;
+    is_similar_location: boolean;
+    is_similar_both: boolean;
+    is_similar_all: boolean;
+  };
+}
+
+export interface CrossDbPipelineResponse {
+  status: string;
+  mode: string;
+  summary: {
+    total_pairs_evaluated: number;
+    bins: {
+      exact_duplicate: number;
+      strong_similar: number;
+      moderate_similar: number;
+      distinct: number;
+    };
+    gate_counts: {
+      similar_text: number;
+      similar_date: number;
+      similar_location: number;
+      similar_both: number;
+      similar_all: number;
+    };
+  };
+  pairs: CrossDbPair[];
+}
+
