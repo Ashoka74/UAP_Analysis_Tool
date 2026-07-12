@@ -16,9 +16,14 @@ import type {
   AdvancedDedupResponse,
   CrossDbPipelineResponse,
 } from '../../types';
+import { api } from '../../api/client';
+import { useStore } from '../../store/useStore';
 
 export function DedupPage() {
+  const { data, dataLoaded } = useStore();
+  const [dataSourceMode, setDataSourceMode] = useState<'real_dataset' | 'sample_mock'>('sample_mock');
   const [activeTab, setActiveTab] = useState<'simple' | 'advanced' | 'cross_db'>('simple');
+
 
 
   // Simple Tab States
@@ -61,31 +66,51 @@ export function DedupPage() {
     setCrossLoading(true);
     setError(null);
     try {
-      const sampleRecords = [
-        { id: 'NUFORC-114209', witness_notes: textA, date_time: dateA, latitude: latA, longitude: lonA },
-        { id: 'MUFON-88912', witness_notes: textB, date_time: dateB, latitude: latB, longitude: lonB },
-        { id: 'BLUEBOOK-1092', witness_notes: 'Triangular craft observed near Phoenix airport with silent motion.', date_time: '1997-03-13', latitude: '33.4400', longitude: '-112.0700' },
-        { id: 'NUFORC-67210', witness_notes: 'Green fireball streaked across night sky over California coast.', date_time: '2025-08-14', latitude: '36.7783', longitude: '-119.4179' },
-        { id: 'MUFON-55319', witness_notes: 'Bright green fireball seen exploding high over California ocean.', date_time: '2025-08-14', latitude: '36.7800', longitude: '-119.4100' }
-      ];
-      const res = await fetch('/api/dedup/cross-db/pipeline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          records_a: sampleRecords,
-          records_b: crossCmpMode === 'between' ? sampleRecords.slice(1) : null,
-          cols_a: ['witness_notes'],
-          cols_b: ['witness_notes'],
-          threshold: threshold,
-          max_days: dateDiffDays,
-          max_km: maxKm
-        })
+      let recordsA: any[] = [];
+      let recordsB: any[] | null = null;
+
+      if (dataSourceMode === 'real_dataset' && dataLoaded && data?.rows && data.rows.length > 0) {
+        const mappedRows = data.rows.slice(0, 200).map((row: any, idx: number) => {
+          const id = row.id || row.locus_tag || row.case_id || `Case-${idx + 1}`;
+          const notes = row.witness_notes || row.narrative || row.description || row.summary || row.text || 'UAP sighting report';
+          const dt = row.date_time || row.date || row.datetime || '2000-01-01';
+          const lat = row.latitude || row.lat || 0;
+          const lon = row.longitude || row.lon || row.lng || 0;
+          return { id: String(id), witness_notes: String(notes), date_time: String(dt), latitude: Number(lat) || 0, longitude: Number(lon) || 0 };
+        });
+
+        if (crossCmpMode === 'between') {
+          const half = Math.floor(mappedRows.length / 2);
+          recordsA = mappedRows.slice(0, half);
+          recordsB = mappedRows.slice(half);
+        } else {
+          recordsA = mappedRows;
+          recordsB = null;
+        }
+      } else {
+        const sampleRecords = [
+          { id: 'NUFORC-114209', witness_notes: textA, date_time: dateA, latitude: latA, longitude: lonA },
+          { id: 'MUFON-88912', witness_notes: textB, date_time: dateB, latitude: latB, longitude: lonB },
+          { id: 'BLUEBOOK-1092', witness_notes: 'Triangular craft observed near Phoenix airport with silent motion.', date_time: '1997-03-13', latitude: '33.4400', longitude: '-112.0700' },
+          { id: 'NUFORC-67210', witness_notes: 'Green fireball streaked across night sky over California coast.', date_time: '2025-08-14', latitude: '36.7783', longitude: '-119.4179' },
+          { id: 'MUFON-55319', witness_notes: 'Bright green fireball seen exploding high over California ocean.', date_time: '2025-08-14', latitude: '36.7800', longitude: '-119.4100' }
+        ];
+        recordsA = sampleRecords;
+        recordsB = crossCmpMode === 'between' ? sampleRecords.slice(1) : null;
+      }
+
+      const dataRes = await api.runCrossDbPipeline({
+        records_a: recordsA,
+        records_b: recordsB,
+        cols_a: ['witness_notes'],
+        cols_b: ['witness_notes'],
+        threshold: threshold,
+        max_days: dateDiffDays,
+        max_km: maxKm
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: CrossDbPipelineResponse = await res.json();
-      setCrossResult(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setCrossResult(dataRes as CrossDbPipelineResponse);
+    } catch (err: any) {
+      setError(err.message || 'Cross-DB pipeline evaluation failed. Check backend connection and dataset schema.');
     } finally {
       setCrossLoading(false);
     }
@@ -98,16 +123,10 @@ export function DedupPage() {
     setSimResult(null);
     setDupResult(null);
     try {
-      const res = await fetch('/api/dedup/simple/similarity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text_a: textA, text_b: textB }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data: SimpleSimilarityResponse = await res.json();
-      setSimResult(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      const dataRes = await api.checkSimpleSimilarity({ text_a: textA, text_b: textB });
+      setSimResult(dataRes as SimpleSimilarityResponse);
+    } catch (err: any) {
+      setError(err.message || 'Similarity check failed.');
     } finally {
       setSimpleLoading(false);
     }
@@ -120,19 +139,13 @@ export function DedupPage() {
     setSimResult(null);
     setDupResult(null);
     try {
-      const res = await fetch('/api/dedup/simple/duplicate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record_a: { narrative: textA, lat: latA, lon: lonA, date: dateA },
-          record_b: { narrative: textB, lat: latB, lon: lonB, date: dateB },
-        }),
+      const dataRes = await api.checkSimpleDuplicate({
+        record_a: { narrative: textA, lat: latA, lon: lonA, date: dateA },
+        record_b: { narrative: textB, lat: latB, lon: lonB, date: dateB },
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: SimpleDuplicateResponse = await res.json();
-      setDupResult(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setDupResult(dataRes as SimpleDuplicateResponse);
+    } catch (err: any) {
+      setError(err.message || 'Duplicate check failed.');
     } finally {
       setSimpleLoading(false);
     }
@@ -143,25 +156,20 @@ export function DedupPage() {
     setAdvLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dedup/advanced/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          threshold,
-          date_diff_days: dateDiffDays,
-          max_km: maxKm,
-          use_llm_judge: useLlmJudge,
-        }),
+      const dataRes = await api.runAdvancedDedup({
+        threshold,
+        date_diff_days: dateDiffDays,
+        max_km: maxKm,
+        use_llm_judge: useLlmJudge,
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: AdvancedDedupResponse = await res.json();
-      setAdvResult(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setAdvResult(dataRes as AdvancedDedupResponse);
+    } catch (err: any) {
+      setError(err.message || 'Advanced deduplication failed.');
     } finally {
       setAdvLoading(false);
     }
   };
+
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
@@ -691,7 +699,7 @@ export function DedupPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4 pt-2 border-t border-border/50">
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/50">
               <span className="text-xs font-semibold text-text-secondary">Comparison Scope:</span>
               <button
                 onClick={() => setCrossCmpMode('within')}
@@ -710,6 +718,33 @@ export function DedupPage() {
                 Between Datasets (DB1 vs DB2)
               </button>
             </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/50">
+              <span className="text-xs font-semibold text-text-secondary">Data Source:</span>
+              <button
+                onClick={() => setDataSourceMode('real_dataset')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                  dataSourceMode === 'real_dataset'
+                    ? 'bg-emerald-500/30 border-emerald-400 text-white font-bold'
+                    : 'bg-elevated/40 border-border text-text-muted hover:border-emerald-500/40'
+                }`}
+              >
+                <Database className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Real Loaded Dataset ({dataLoaded && data?.rows ? `${data.rows.length.toLocaleString()} rows` : '0 loaded'})</span>
+              </button>
+              <button
+                onClick={() => setDataSourceMode('sample_mock')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                  dataSourceMode === 'sample_mock'
+                    ? 'bg-amber-500/30 border-amber-400 text-white font-bold'
+                    : 'bg-elevated/40 border-border text-text-muted hover:border-amber-500/40'
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                <span>Interactive Sample Mockup (5 test cases)</span>
+              </button>
+            </div>
+
 
             <div className="flex justify-start pt-2">
               <button

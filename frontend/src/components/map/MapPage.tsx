@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { Loader2 } from 'lucide-react';
+import { BASE } from '../../api/client';
 
 export function MapPage() {
     const { dataLoaded, summary } = useStore();
@@ -49,7 +50,7 @@ export function MapPage() {
                 )}
                 <iframe
                     key={refreshKey}
-                    src="/api/map/html"
+                    src={`${BASE}/map/html`}
                     className="w-full h-full border-0 absolute inset-0 z-0"
                     onLoad={() => setLoading(false)}
                     title="Kepler Map"

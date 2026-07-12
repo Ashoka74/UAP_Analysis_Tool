@@ -1,4 +1,5 @@
 import { Panel } from '../common/Panel';
+import { BASE } from '../../api/client';
 
 export function ClusterView() {
     return (
@@ -10,10 +11,11 @@ export function ClusterView() {
             >
                 <div className="relative h-[calc(100vh-180px)] w-full overflow-hidden rounded-b-lg">
                     <iframe
-                        src="/api/analysis/clusters"
+                        src={`${BASE}/analysis/clusters`}
                         className="h-full w-full border-0"
                         title="UAP Clusters LLM"
                     />
+
                 </div>
             </Panel>
         </div>

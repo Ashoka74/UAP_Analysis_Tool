@@ -28,7 +28,7 @@ import type {
 // back to a same-origin "/api", which the Vite dev proxy (vite.config.ts) and
 // a Vercel `/api` rewrite both handle transparently.
 const API_ORIGIN = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '');
-const BASE = `${API_ORIGIN}/api`;
+export const BASE = `${API_ORIGIN}/api`;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
@@ -43,7 +43,43 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  checkSimpleSimilarity(payload: { text_a: string; text_b: string }): Promise<any> {
+    return request('/dedup/simple/similarity', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  checkSimpleDuplicate(payload: { record_a: Record<string, unknown>; record_b: Record<string, unknown> }): Promise<any> {
+    return request('/dedup/simple/duplicate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  runAdvancedDedup(payload: { threshold: number; date_diff_days: number; max_km: number; use_llm_judge: boolean }): Promise<any> {
+    return request('/dedup/advanced/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  runCrossDbPipeline(payload: Record<string, unknown>): Promise<any> {
+    return request('/dedup/cross-db/pipeline', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  runMagnetic(payload: { lat_col: string; lon_col: string; date_col: string; distance: number }): Promise<any> {
+    return request('/magnetic/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   loadData(type = 'west', rows = 15000): Promise<LoadDataResponse> {
+
     return request(`/data/load?type=${type}&rows=${rows}`);
   },
 

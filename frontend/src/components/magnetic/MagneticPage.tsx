@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { Compass, Loader2, X } from 'lucide-react';
+import { BASE } from '../../api/client';
 
 interface MagneticGraph {
     title: string;
@@ -60,7 +61,7 @@ export function MagneticPage() {
         setError(null);
         setResult(null);
         try {
-            const res = await fetch('/api/magnetic/run', {
+            const res = await fetch(`${BASE}/magnetic/run`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
