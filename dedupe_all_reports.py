@@ -10,9 +10,16 @@ palette, sans-serif fonts, vector + raster export (PDF + PNG, 300 DPI), no
 chart junk, axis labels with units. Each figure is skipped (not stubbed
 blank) if its source column isn't present in the corpus.
 
+Pass --manifest to additionally cross-reference the corpus against the
+official war.gov document manifest (uap-data.csv / a browser export of the
+same) via the shared "PDF | Image Link" column — this adds a document
+coverage figure and writes pipeline_data/missing_documents.csv listing
+released documents with zero corresponding extracted reports.
+
 Usage:
     uv run python dedupe_all_reports.py
     uv run python dedupe_all_reports.py --src SUBDATASETS_V2/PURSUE_1_2_3_4_merged.csv --out figures
+    uv run python dedupe_all_reports.py --manifest pipeline_data/uap_manifest_export.csv
 """
 import argparse
 from pathlib import Path
@@ -240,6 +247,73 @@ def fig_timeliness(df, out_dir):
     save_fig(fig, out_dir, "11_timeliness_status")
 
 
+LINK_COL = "PDF | Image Link"
+
+
+def document_coverage(corpus: pd.DataFrame, manifest: pd.DataFrame) -> dict:
+    """Cross-reference the corpus against the official release manifest via
+    the shared PDF | Image Link column. Returns summary stats and writes
+    pipeline_data/missing_documents.csv (released docs with zero extracted
+    reports)."""
+    manifest = manifest.copy()
+    manifest["Type"] = manifest["Type"].str.strip()  # source has "PDF"/"PDF " as distinct values
+    m_linked = manifest[manifest[LINK_COL].notna()].drop_duplicates(subset=[LINK_COL])
+    c_linked = corpus[corpus[LINK_COL].notna()]
+
+    m_links = set(m_linked[LINK_COL])
+    c_links = set(c_linked[LINK_COL])
+    missing_links = m_links - c_links
+
+    missing_docs = m_linked[m_linked[LINK_COL].isin(missing_links)]
+    per_doc = c_linked.groupby(LINK_COL).size()
+
+    out_csv = Path("pipeline_data/missing_documents.csv")
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    missing_docs[["Title", "Type", "Agency", "Release Date", LINK_COL]].to_csv(out_csv, index=False)
+
+    return {
+        "manifest_rows": len(manifest),
+        "manifest_docs_linked": len(m_linked),
+        "corpus_docs_referenced": len(c_links),
+        "missing_docs": len(missing_docs),
+        "missing_by_type": missing_docs["Type"].value_counts().to_dict(),
+        "missing_by_agency": missing_docs["Agency"].value_counts().to_dict(),
+        "reports_per_doc_median": float(per_doc.median()),
+        "reports_per_doc_mean": float(per_doc.mean()),
+        "reports_per_doc_max": int(per_doc.max()),
+        "missing_csv": str(out_csv),
+    }
+
+
+def fig_document_coverage(corpus, out_dir, manifest):
+    manifest = manifest.copy()
+    manifest["Type"] = manifest["Type"].str.strip()
+    m_linked = manifest[manifest[LINK_COL].notna()].drop_duplicates(subset=[LINK_COL])
+    c_linked = corpus[corpus[LINK_COL].notna()]
+    m_links = set(m_linked[LINK_COL])
+    c_links = set(c_linked[LINK_COL])
+
+    by_type = m_linked.assign(
+        represented=m_linked[LINK_COL].isin(c_links)
+    ).groupby("Type")["represented"].agg(["sum", "count"])
+    if by_type.empty:
+        return
+    by_type["missing"] = by_type["count"] - by_type["sum"]
+
+    fig, ax = plt.subplots(figsize=(4.5, 3))
+    y = range(len(by_type))
+    ax.barh(y, by_type["sum"], color=OKABE_ITO[2], edgecolor="black",
+           linewidth=0.5, label="Represented in corpus")
+    ax.barh(y, by_type["missing"], left=by_type["sum"], color=OKABE_ITO[5],
+           edgecolor="black", linewidth=0.5, label="No extracted reports")
+    ax.set_yticks(list(y))
+    ax.set_yticklabels(by_type.index)
+    ax.set_xlabel("Released documents (n)")
+    ax.set_title("Document coverage vs. official war.gov manifest")
+    ax.legend(loc="lower right")
+    save_fig(fig, out_dir, "12_document_coverage")
+
+
 FIGURES = [
     fig_source_composition, fig_year_distribution, fig_year_eras,
     fig_top_countries, fig_craft_shapes, fig_trust_score, fig_trust_bands,
@@ -251,6 +325,9 @@ def main():
     ap = argparse.ArgumentParser(description="Publication-quality EDA figures for the PURSUE corpus")
     ap.add_argument("--src", default=DEFAULT_SRC)
     ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--manifest", default=None,
+                    help="Official war.gov release manifest CSV (uap-data.csv or a "
+                         "browser export of it) to cross-reference for document coverage.")
     args = ap.parse_args()
 
     src = Path(args.src)
@@ -267,6 +344,21 @@ def main():
     print(f"\nGenerating figures -> {out_dir}/")
     for f in FIGURES:
         f(df, out_dir)
+
+    if args.manifest:
+        manifest_path = Path(args.manifest)
+        if not manifest_path.exists():
+            print(f"  ⚠ manifest not found: {manifest_path} — skipping document coverage")
+        else:
+            print(f"\nCross-referencing against manifest {manifest_path} ...")
+            manifest = pd.read_csv(manifest_path, low_memory=False)
+            fig_document_coverage(df, out_dir, manifest)
+            stats = document_coverage(df, manifest)
+            print(f"  manifest documents (linked): {stats['manifest_docs_linked']}")
+            print(f"  represented in corpus: {stats['corpus_docs_referenced']}")
+            print(f"  missing (zero extracted reports): {stats['missing_docs']}")
+            print(f"  missing by type: {stats['missing_by_type']}")
+            print(f"  saved -> {stats['missing_csv']}")
 
     n = len(list(out_dir.glob("*.pdf"))) if out_dir.exists() else 0
     print(f"\nDone. {n} figures saved to {out_dir}/")
