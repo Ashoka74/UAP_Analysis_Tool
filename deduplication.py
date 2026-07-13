@@ -57,12 +57,23 @@ default_cols = [c for c in ["witness.notes", "description", "case_text.text", "s
 if not default_cols:
     default_cols = [df_active.columns[0]]
 
-embed_cols = st.multiselect(
-    "Embedding Columns for DB1 (Concatenated to build narrative vector)",
-    options=list(df_active.columns),
-    default=default_cols,
-    help="Select one or more text columns that describe the sighting narrative."
-)
+ec1, ec2 = st.columns([2, 3])
+with ec1:
+    embed_model_name = st.selectbox(
+        "Embedding Model",
+        options=dedup_service.EMBEDDING_MODEL_OPTIONS,
+        help="Harrier is asymmetric (encode_document/encode_query) and matches "
+             "the rest of the app's clustering; the MiniLM options are lighter "
+             "and multilingual-capable.",
+        key="dedup_model_name",
+    )
+with ec2:
+    embed_cols = st.multiselect(
+        "Embedding Columns for DB1 (Concatenated to build narrative vector)",
+        options=list(df_active.columns),
+        default=default_cols,
+        help="Select one or more text columns that describe the sighting narrative."
+    )
 
 st.markdown("---")
 
@@ -148,8 +159,8 @@ with tab1:
     
     with btn_sim:
         if st.button("✨ Check Similarity (is_similar)", type="secondary", use_container_width=True, key="btn_sim_checker"):
-            with st.spinner("Computing Harrier vector cosine similarity..."):
-                res = dedup_service.check_similarity(narr_a, narr_b)
+            with st.spinner(f"Computing {embed_model_name.rsplit('/', 1)[-1]} vector cosine similarity..."):
+                res = dedup_service.check_similarity(narr_a, narr_b, model_name=embed_model_name)
                 score = res.get("similarity_score", 0.0)
                 is_sim = res.get("is_similar", False)
                 st.markdown("#### Semantic Verdict")
@@ -165,7 +176,7 @@ with tab1:
             with st.spinner("Evaluating semantic, spatial, and temporal convergence..."):
                 rec_a = {"narrative": narr_a, "date": date_a, "lat": lat_a, "lon": lon_a}
                 rec_b = {"narrative": narr_b, "date": date_b, "lat": lat_b, "lon": lon_b}
-                res = dedup_service.check_duplicate(rec_a, rec_b)
+                res = dedup_service.check_duplicate(rec_a, rec_b, model_name=embed_model_name)
                 
                 is_dup = res.get("is_duplicate", False)
                 conf = res.get("confidence", "LOW")
@@ -265,10 +276,12 @@ with tab3:
     st.markdown("---")
     
     if st.button("🚀 Execute Cross-DB Similarity Matrix", type="primary", key="btn_run_cross_pipeline"):
-        with st.spinner("Computing cross-database Harrier matrix embeddings and gate criteria..."):
+        with st.spinner(f"Computing cross-database {embed_model_name.rsplit('/', 1)[-1]} "
+                       "matrix embeddings and gate criteria (no row cap — every "
+                       "row in both datasets is encoded)..."):
             records_a = df_active.to_dict("records")
             records_b = df_b.to_dict("records") if cmp_mode == "Between two datasets (DB1 vs DB2)" else None
-            
+
             res = dedup_service.run_cross_db_pipeline(
                 records_a=records_a,
                 records_b=records_b,
@@ -278,7 +291,8 @@ with tab3:
                 max_days=3,
                 max_km=50.0,
                 top_k=5,
-                max_pairs=300
+                max_pairs=300,
+                model_name=embed_model_name,
             )
             st.session_state['cross_db_pipeline_results'] = res
 

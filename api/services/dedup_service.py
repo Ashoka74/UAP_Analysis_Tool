@@ -10,50 +10,63 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Try importing embedding model and apply_dedup helpers
-try:
-    from embed_narratives import get_harrier_model, get_embed_model, _MODEL_NAME
-except ImportError:
+# Selectable embedding models — mirrors the picker in rag_search.py so Dedupe
+# Studio and Smart-Search offer the same three options from one place.
+HARRIER_MODEL = "microsoft/harrier-oss-v1-270m"
+EMBEDDING_MODEL_OPTIONS = [
+    HARRIER_MODEL,
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+]
+_MODEL_NAME = HARRIER_MODEL  # backward-compat default surfaced in API responses
+
+_model_cache: Dict[str, Any] = {}
+
+def _get_model(model_name: str = HARRIER_MODEL):
+    """Return a cached embedder for model_name, loading it on first use.
+
+    Harrier uses the shared uap_analyzer loader (asymmetric encode_document/
+    encode_query API, same instance the rest of the app uses — no duplicate
+    weights in memory). Other models load as plain sentence-transformers,
+    cached per model_name so switching models mid-session doesn't reload.
+    """
+    if model_name in _model_cache:
+        return _model_cache[model_name]
     try:
-        from uap_analyzer import get_embed_model
-        _MODEL_NAME = "default_embedder"
-        def get_harrier_model():
-            return get_embed_model()
-    except ImportError:
-        _MODEL_NAME = "microsoft/harrier-oss-v1-270m"
-        def get_harrier_model():
-            return None
+        if model_name == HARRIER_MODEL:
+            from uap_analyzer import get_embed_model
+            m = get_embed_model()
+        else:
+            from sentence_transformers import SentenceTransformer
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            m = SentenceTransformer(model_name, device=device)
+        _model_cache[model_name] = m
+        return m
+    except Exception as e:
+        logger.warning(f"Failed to load embedder '{model_name}': {e}")
+        return None
 
-_embedder = None
-
-def _get_model():
-    global _embedder
-    if _embedder is None:
-        try:
-            from embed_narratives import get_harrier_model
-            _embedder = get_harrier_model()
-        except Exception as e:
-            logger.warning(f"Failed to load harrier model: {e}")
-            try:
-                from uap_analyzer import get_embed_model
-                _embedder = get_embed_model()
-            except Exception as e2:
-                logger.error(f"Failed fallback embedder: {e2}")
-    return _embedder
-
-def _encode_text(text: str) -> np.ndarray:
-    model = _get_model()
+def _encode_texts(texts: List[str], model_name: str = HARRIER_MODEL) -> np.ndarray:
+    """Batch-encode many texts in one forward pass (used by the cross-DB
+    matrix pipeline — encoding row-by-row does not scale past a few hundred
+    rows)."""
+    if not texts:
+        return np.zeros((0, 1024), dtype=np.float32)
+    model = _get_model(model_name)
     if model is None:
-        # Fallback pseudo-embedding or simple hash if no transformer loaded
-        np.random.seed(abs(hash(text)) % (2**32))
-        v = np.random.normal(size=(1024,)).astype(np.float32)
-        return v / np.linalg.norm(v)
-    
-    # Check if sentence_transformers model
-    if hasattr(model, "encode"):
-        vec = model.encode([text], normalize_embeddings=True)
-        return np.array(vec[0], dtype=np.float32)
-    return np.zeros((1024,), dtype=np.float32)
+        rng = np.random.default_rng(0)
+        vecs = rng.normal(size=(len(texts), 1024)).astype(np.float32)
+        return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    if model_name == HARRIER_MODEL and hasattr(model, "encode_document"):
+        vecs = model.encode_document(texts, batch_size=256, show_progress_bar=False)
+    else:
+        vecs = model.encode(texts, batch_size=256, normalize_embeddings=True,
+                            show_progress_bar=False)
+    return np.array(vecs, dtype=np.float32)
+
+def _encode_text(text: str, model_name: str = HARRIER_MODEL) -> np.ndarray:
+    return _encode_texts([text], model_name)[0]
 
 def _cosine_sim(v1: np.ndarray, v2: np.ndarray) -> float:
     norm1 = np.linalg.norm(v1)
@@ -81,38 +94,41 @@ def _parse_date(d_str: Any) -> Optional[datetime]:
             continue
     return None
 
-def check_similarity(text_a: str, text_b: str) -> Dict[str, Any]:
+def check_similarity(text_a: str, text_b: str, model_name: str = HARRIER_MODEL) -> Dict[str, Any]:
     """
-    Simple check: computes Harrier embedding cosine similarity between two narratives.
+    Simple check: computes embedding cosine similarity between two narratives
+    using the selected model (Harrier by default).
     """
     if not text_a or not text_b:
         return {
             "similarity_score": 0.0,
             "is_similar": False,
-            "model": _MODEL_NAME,
+            "model": model_name,
             "reason": "One or both text inputs are empty."
         }
-    
-    vec_a = _encode_text(text_a)
-    vec_b = _encode_text(text_b)
+
+    vec_a = _encode_text(text_a, model_name)
+    vec_b = _encode_text(text_b, model_name)
     sim = _cosine_sim(vec_a, vec_b)
-    
+
     return {
         "similarity_score": round(sim, 4),
         "is_similar": sim >= 0.80,
-        "model": _MODEL_NAME,
+        "model": model_name,
         "reason": f"Cosine similarity {sim:.4f} is {'above' if sim >= 0.80 else 'below'} the 0.80 threshold."
     }
 
-def check_duplicate(record_a: Dict[str, Any], record_b: Dict[str, Any]) -> Dict[str, Any]:
+def check_duplicate(record_a: Dict[str, Any], record_b: Dict[str, Any],
+                    model_name: str = HARRIER_MODEL) -> Dict[str, Any]:
     """
     Screening check: evaluates whether two records describe the same sighting/event
-    by combining Harrier narrative similarity, haversine geographic distance, and temporal difference.
+    by combining narrative similarity (selected model), haversine geographic
+    distance, and temporal difference.
     """
     narr_a = str(record_a.get("narrative") or record_a.get("text") or record_a.get("description") or "")
     narr_b = str(record_b.get("narrative") or record_b.get("text") or record_b.get("description") or "")
-    
-    sim_result = check_similarity(narr_a, narr_b)
+
+    sim_result = check_similarity(narr_a, narr_b, model_name)
     sim = sim_result["similarity_score"]
     
     # Distance calculation
@@ -134,7 +150,7 @@ def check_duplicate(record_a: Dict[str, Any], record_b: Dict[str, Any]) -> Dict[
         days_diff = abs((da - db).days)
         
     reasons = []
-    reasons.append(f"Narrative Cosine Similarity: {sim:.4f} (Harrier)")
+    reasons.append(f"Narrative Cosine Similarity: {sim:.4f} ({model_name.rsplit('/', 1)[-1]})")
     if km_diff is not None:
         reasons.append(f"Spatial Separation: {km_diff} km")
     else:
@@ -264,7 +280,9 @@ def run_cross_db_pipeline(
     max_days: int = 3,
     max_km: float = 50.0,
     top_k: int = 5,
-    max_pairs: int = 500
+    max_pairs: int = 500,
+    model_name: str = HARRIER_MODEL,
+    max_rows: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Cross-DB Similarity & Deduplication Pipeline supporting dual-path workflows:
@@ -297,17 +315,18 @@ def run_cross_db_pipeline(
                     break
         return " - ".join(parts) if parts else "Unknown Report"
 
-    # Limit batch size for immediate API responsiveness if over 500 rows
-    max_eval_rows = min(500, len(records_a))
-    eval_a = records_a[:max_eval_rows]
-    eval_b = records_b[:min(500, len(records_b))]
-    
+    # No implicit truncation — every row the caller provides is evaluated.
+    # Pass max_rows explicitly if you want to cap it (e.g. for a UI preview).
+    eval_a = records_a[:max_rows] if max_rows else records_a
+    eval_b = (records_b[:max_rows] if max_rows else records_b)
+
     texts_a = [_build_text(r, cols_a) for r in eval_a]
     texts_b = [_build_text(r, cols_b) for r in eval_b] if mode == "between_datasets" else texts_a
-    
-    # Encode batches
-    vecs_a = np.array([_encode_text(t) for t in texts_a], dtype=np.float32)
-    vecs_b = np.array([_encode_text(t) for t in texts_b], dtype=np.float32) if mode == "between_datasets" else vecs_a
+
+    # Encode in one batched call per side (was one-row-at-a-time — didn't
+    # scale once the 500-row cap was lifted).
+    vecs_a = _encode_texts(texts_a, model_name)
+    vecs_b = _encode_texts(texts_b, model_name) if mode == "between_datasets" else vecs_a
     
     # Cosine similarity matrix via matrix multiplication
     norms_a = np.linalg.norm(vecs_a, axis=1, keepdims=True)
