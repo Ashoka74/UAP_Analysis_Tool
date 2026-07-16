@@ -40,6 +40,24 @@ interface AppState {
   analysisResults: AnalysisResponse | null;
   setAnalysisRunning: (running: boolean) => void;
   setAnalysisResults: (results: AnalysisResponse) => void;
+  // Which Analysis sub-tab was active (clusters/correlation/xgboost/distribution/
+  // association) — AnalysisPage unmounts when you navigate to another page, so
+  // this must live here (not component useState) to still be on the right tab
+  // when you come back, rather than resetting to 'clusters'.
+  analysisActiveTab: string;
+  setAnalysisActiveTab: (tab: string) => void;
+  // XGBoost feature importance handed off from the Cramér's V explorer to the
+  // Feature Importance tab (AnalysisPage's onXgboost callback path). Kept
+  // separate from cramersLocal* — that slice feeds CramersVExplorer's own
+  // inline results section, which renders unconditionally whenever it's
+  // non-null; reusing it here would make the same results render twice.
+  analysisXgbHandoff: Record<string, XGBoostResult> | null;
+  analysisXgbHandoffPca: XgboostPcaResponse | null;
+  analysisXgbHandoffImpute: XgboostImputeResponse | null;
+  setAnalysisXgbHandoff: (
+    r: Record<string, XGBoostResult> | null,
+    extras?: { pca?: XgboostPcaResponse | null; impute?: XgboostImputeResponse | null },
+  ) => void;
 
   // Cramér's V explorer (cached across tab/page switches)
   cramersSelected: string[] | null; // null = not yet initialized → defaults to all eligible
@@ -106,6 +124,16 @@ export const useStore = create<AppState>((set) => ({
   analysisResults: null,
   setAnalysisRunning: (running) => set({ analysisRunning: running }),
   setAnalysisResults: (results) => set({ analysisResults: results, analysisRunning: false }),
+  analysisActiveTab: 'clusters',
+  setAnalysisActiveTab: (tab) => set({ analysisActiveTab: tab }),
+  analysisXgbHandoff: null,
+  analysisXgbHandoffPca: null,
+  analysisXgbHandoffImpute: null,
+  setAnalysisXgbHandoff: (r, extras) => set({
+    analysisXgbHandoff: r,
+    analysisXgbHandoffPca: extras?.pca ?? null,
+    analysisXgbHandoffImpute: extras?.impute ?? null,
+  }),
 
   cramersSelected: null,
   cramersReport: null,

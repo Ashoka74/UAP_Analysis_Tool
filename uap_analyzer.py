@@ -924,10 +924,28 @@ class UAPAnalyzer:
         st.plotly_chart(fig, use_container_width=True)
         logging.info("Embeddings plotted with TF-IDF colors")
 
+    @staticmethod
+    def _wrap_hover_text(text, width=60, max_lines=14):
+        """HTML-escape + word-wrap raw narrative text into <br>-joined lines
+        so Plotly hover tooltips show a readable paragraph instead of one
+        unbroken line (and so stray '<'/'>' in the source text can't be
+        misread as markup)."""
+        s = "" if text is None else str(text)
+        if not s or s.strip().lower() in ("nan", "none", "null"):
+            return "(no text)"
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        lines = textwrap.wrap(s, width=width) or [""]
+        if len(lines) > max_lines:
+            lines = lines[:max_lines] + ["…"]
+        return "<br>".join(lines)
+
     def plot_embeddings4(self, title=None, cluster_terms=None, cluster_labels=None, reduced_embeddings=None, column=None, data=None):
         """
         Plots the reduced dimensionality embeddings with clusters indicated.
-        
+        Clicking a point selects its whole cluster: the raw rows for that
+        cluster are shown in a table alongside the chart, with CSV/plot
+        export buttons.
+
         Args:
             title (str): The title of the plot.
         """
@@ -936,16 +954,16 @@ class UAPAnalyzer:
         assert cluster_terms is not None, "Cluster TF-IDF analysis has not been performed yet."
 
         logging.info("Plotting embeddings with TF-IDF colors")
-        
+
         fig = go.Figure()
-        
+
         # Determine unique cluster IDs and terms, and ensure consistent color mapping
         unique_cluster_ids = np.unique(cluster_labels)
         unique_cluster_terms = [cluster_terms[i] for i in unique_cluster_ids]#if i != -1]  # Exclude noise by ID
 
         color_map = px.colors.qualitative.Plotly  # Using Plotly Express's qualitative colors for consistency
         color_idx = 0
-        
+
         # Map each cluster ID to a color
         cluster_colors = {}
         for cid in unique_cluster_ids:
@@ -955,8 +973,13 @@ class UAPAnalyzer:
             #else:
             #    cluster_colors[cid] = 'grey'  # Noise or outliers in grey
 
+        cluster_row_indices = {}  # cluster_id -> original-dataframe row indices
         for cluster_id, cluster_term in zip(unique_cluster_ids, unique_cluster_terms):
             indices = np.where(cluster_labels == cluster_id)[0]
+            cluster_row_indices[cluster_id] = indices
+            hover_text = [
+                self._wrap_hover_text(t) for t in data[f'{column}'].iloc[indices]
+            ]
             fig.add_trace(
                 go.Scatter(
                     x=reduced_embeddings[indices, 0],
@@ -968,11 +991,15 @@ class UAPAnalyzer:
                         opacity=0.8#if cluster_id != -1 else 0.5,
                     ),
                     name=cluster_term,
-                    text=data[f'{column}'].iloc[indices],
+                    text=hover_text,
                     hoverinfo='text',
+                    # Original dataframe row index per point, so a click can
+                    # be traced straight back to `data` without re-deriving
+                    # positions from curve/point numbers.
+                    customdata=indices,
                 )
             )
-            
+
         fig.update_layout(
             title=title if title else "Embeddings Visualized",
             showlegend=True,
@@ -980,9 +1007,78 @@ class UAPAnalyzer:
             legend=dict(
                 traceorder='normal',  # 'normal' or 'reversed'; ensures that traces appear in the order they are added
                 itemsizing='constant'
-            )
+            ),
+            height=600,
         )
-        st.plotly_chart(fig, use_container_width=True)
+
+        plot_col, table_col = st.columns([2, 1])
+
+        with plot_col:
+            try:
+                event = st.plotly_chart(
+                    fig, use_container_width=True,
+                    on_select="rerun", key=f"cluster_scatter_{column}",
+                )
+            except TypeError:
+                # Older Streamlit without on_select — render non-interactive,
+                # no click-to-table selection available.
+                st.plotly_chart(fig, use_container_width=True, key=f"cluster_scatter_{column}")
+                event = None
+
+            dl1, dl2 = st.columns(2)
+            with dl1:
+                st.download_button(
+                    "⬇️ Download plot (HTML)",
+                    data=fig.to_html(include_plotlyjs="cdn"),
+                    file_name=f"{column}_clusters.html",
+                    mime="text/html",
+                    key=f"dl_html_{column}",
+                )
+            with dl2:
+                try:
+                    png_bytes = fig.to_image(format="png", scale=2)
+                    st.download_button(
+                        "⬇️ Download plot (PNG)",
+                        data=png_bytes,
+                        file_name=f"{column}_clusters.png",
+                        mime="image/png",
+                        key=f"dl_png_{column}",
+                    )
+                except Exception as e:
+                    logging.warning(f"PNG export unavailable (kaleido missing?): {e}")
+
+        # Resolve the clicked point back to its cluster, defensively — the
+        # selection payload shape varies across Streamlit versions.
+        selected_cluster_id = None
+        sel = {}
+        if event is not None:
+            sel = (event.get("selection") if hasattr(event, "get") else None) or {}
+        pts = sel.get("points", []) if hasattr(sel, "get") else []
+        if pts:
+            p = pts[-1]
+            row_idx = p.get("customdata")
+            if isinstance(row_idx, (list, tuple)):
+                row_idx = row_idx[0] if row_idx else None
+            if row_idx is not None:
+                selected_cluster_id = cluster_labels[int(row_idx)]
+
+        with table_col:
+            if selected_cluster_id is None:
+                st.info("Click a point above to inspect that cluster's raw rows here.")
+            else:
+                sel_indices = cluster_row_indices[selected_cluster_id]
+                cluster_label = cluster_terms[selected_cluster_id]
+                st.markdown(f"**Cluster:** {cluster_label}  \n**Rows:** {len(sel_indices)}")
+                table_df = data.iloc[sel_indices]
+                st.dataframe(table_df, use_container_width=True, height=440)
+                st.download_button(
+                    "⬇️ Download cluster rows (CSV)",
+                    data=table_df.to_csv(index=True).encode("utf-8"),
+                    file_name=f"{column}_cluster_{selected_cluster_id}.csv",
+                    mime="text/csv",
+                    key=f"dl_csv_{column}_{selected_cluster_id}",
+                )
+
         logging.info("Embeddings plotted with TF-IDF colors")
 
 

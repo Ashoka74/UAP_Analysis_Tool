@@ -57,7 +57,22 @@ export const api = {
     });
   },
 
-  runAdvancedDedup(payload: { threshold: number; date_diff_days: number; max_km: number; use_llm_judge: boolean }): Promise<any> {
+  runAdvancedDedup(payload: {
+    records: Record<string, unknown>[];
+    cols?: string[];
+    threshold: number;
+    date_diff_days: number;
+    max_km: number;
+    use_llm_judge: boolean;
+    date_col?: string;
+    lat_col?: string;
+    lon_col?: string;
+    location_col?: string;
+    state_col?: string;
+    use_gazetteer?: boolean;
+    use_cluster_blocking?: boolean;
+    block_min_cluster_size?: number;
+  }): Promise<any> {
     return request('/dedup/advanced/run', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -71,6 +86,47 @@ export const api = {
     });
   },
 
+  // Downloads a .zip with the deduped dataset (dedup_cluster_id/size/
+  // is_canonical/is_duplicate baked onto every row) plus a metadata JSON
+  // recording exactly how that run was configured, for reproducibility.
+  async exportDedupResults(payload: {
+    records: Record<string, unknown>[];
+    clusters: Record<string, unknown>[];
+    id_field?: string;
+    parameters?: Record<string, unknown>;
+  }): Promise<void> {
+    const res = await fetch(`${BASE}/dedup/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(body.detail || `Export failed: ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dedup_export.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // Same enrichment as exportDedupResults, but loads the result as the
+  // session's active dataset instead of a download — same response shape
+  // as loadData/uploadFile so it drops straight into the Data Explorer store.
+  applyDedupToDataset(payload: {
+    records: Record<string, unknown>[];
+    clusters: Record<string, unknown>[];
+    id_field?: string;
+  }): Promise<LoadDataResponse> {
+    return request('/dedup/apply', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   runMagnetic(payload: { lat_col: string; lon_col: string; date_col: string; distance: number }): Promise<any> {
     return request('/magnetic/run', {
       method: 'POST',
@@ -78,7 +134,7 @@ export const api = {
     });
   },
 
-  loadData(type = 'west', rows = 15000): Promise<LoadDataResponse> {
+  loadData(type = 'west', rows = 25000): Promise<LoadDataResponse> {
 
     return request(`/data/load?type=${type}&rows=${rows}`);
   },
