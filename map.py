@@ -1030,6 +1030,37 @@ secret_bases = pd.read_csv('secret_bases.csv')
 map_1.add_data(data=secret_bases, name="secret_bases")
 map_1.add_data(data=powerplant, name='nuclear_powerplants')
 
+# Optional extra source: the chronological per-cluster movement chains that
+# Dedupe Studio's "Export Enriched Dataset (.zip)" emits as cluster_edges.csv.
+# Each row is one leg (earliest sighting -> next, by date) of one duplicate
+# cluster, with from_/to_ resolved coordinates — rendered as an arc layer so
+# a cluster's chain can be followed across the map in time order.
+cluster_edges_df = None
+edges_file = st.file_uploader(
+    "Upload Cluster Edges (optional — cluster_edges.csv from the Dedupe Studio export zip)",
+    type=["csv"], key="cluster_edges_upload",
+)
+if edges_file is not None:
+    try:
+        _edges = pd.read_csv(edges_file)
+        _required = {"from_lat", "from_lon", "to_lat", "to_lon"}
+        _missing = _required - set(_edges.columns)
+        if _missing:
+            st.warning(f"cluster_edges.csv is missing expected columns: {sorted(_missing)}")
+        else:
+            # Arcs need both endpoints; legs whose location never resolved
+            # keep their chronology in the CSV but can't be drawn.
+            _n_total = len(_edges)
+            _edges = _edges.dropna(subset=["from_lat", "from_lon", "to_lat", "to_lon"])
+            cluster_edges_df = _edges
+            _skipped = _n_total - len(_edges)
+            st.caption(
+                f"Loaded {len(_edges)} drawable cluster legs"
+                + (f" ({_skipped} legs skipped — unresolved coordinates)" if _skipped else "")
+            )
+    except Exception as e:
+        st.error(f"Could not read cluster edges file: {e}")
+
 # Get the already filtered data from session state for the map
 filtered_df = st.session_state.get('parsed_responses', pd.DataFrame())
 if my_dataset is not None:
@@ -1082,6 +1113,40 @@ if not filtered_df.empty and data_source:
         else:
             base_config['config']['visState']['layers'].extend([layer for layer in uap_config['config']['visState']['layers']])
             map_1.config = base_config
+
+        # Cluster movement chains (if uploaded): one arc per chronological
+        # leg, blue at the earlier sighting -> red at the later one, so the
+        # arc's color gradient encodes the direction of travel through time.
+        if cluster_edges_df is not None and not cluster_edges_df.empty:
+            base_config['config']['visState']['layers'].append({
+                "id": "cluster_edges_arc",
+                "type": "arc",
+                "config": {
+                    "dataId": "cluster_edges",
+                    "label": "Cluster Movement Chains",
+                    "color": [64, 154, 255],
+                    "columns": {
+                        "lat0": "from_lat", "lng0": "from_lon",
+                        "lat1": "to_lat", "lng1": "to_lon",
+                    },
+                    "isVisible": True,
+                    "visConfig": {
+                        "opacity": 0.8,
+                        "thickness": 2,
+                        "targetColor": [255, 92, 92],
+                    },
+                },
+            })
+            # Hovering a leg should identify the cluster and both sightings.
+            try:
+                base_config['config']['visState']['interactionConfig']['tooltip']['fieldsToShow']['cluster_edges'] = [
+                    {"name": n, "format": None}
+                    for n in ("cluster_id", "leg_index", "from_id", "to_id", "from_date", "to_date", "leg_km")
+                ]
+            except (KeyError, TypeError):
+                pass
+            map_1.config = base_config
+            map_1.add_data(data=sanitize_dataframe_for_json(cluster_edges_df), name="cluster_edges")
 
         # Ensure JSON-serializable dataframe for Kepler ingestion
         safe_map_df = sanitize_dataframe_for_json(filtered_df)

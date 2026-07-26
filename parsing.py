@@ -1273,7 +1273,7 @@ def filter_dataframe_legacy(df: pd.DataFrame) -> pd.DataFrame:
 
 
 from config import (
-    FORMAT_MASTER_SCU_V1,
+    FORMAT_MASTER_SCU_V1, FORMAT_MASTER_SCU_V2,
     FORMAT_LONG, FORMAT_LONG_XLSX, FORMAT_MINI_SCU, FORMAT_SCU_V1, FORMAT_SCU_V2, FORMAT_SCU_V3, FORMAT_MERGED, FORMAT_UFOSETI_RU,
     FORMAT_NUFORC, FORMAT_BLUE_BOOK, FORMAT_UK_NATIONAL_ARCHIVES,
     FORMAT_COBEPS_NOTIFICATIONS_PAN, FORMAT_COBEPS_COB_2021,
@@ -1294,6 +1294,7 @@ DEEPSEEK_KEY = st.secrets.get("DEEPSEEK_KEY", "")
 # the two never drift apart.
 SCHEMA_FORMATS = {
     "MasterSCU_v1":                    FORMAT_MASTER_SCU_V1,
+    "MasterSCU_v2":                    FORMAT_MASTER_SCU_V2,
     "SCU_v1":                          FORMAT_SCU_V1,
     "Mini-SCU (tunnel)":               FORMAT_MINI_SCU,
     "Default UAP Format":              FORMAT_LONG,
@@ -1325,7 +1326,7 @@ SCHEMA_FORMATS = {
 # the schema picker presents them grouped so the right standard is easy to find.
 SCHEMA_FORMAT_GROUPS = {
     "Canonical & SCU": [
-        "MasterSCU_v1", "SCU_v1", "Mini-SCU (tunnel)", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
+        "MasterSCU_v1", "MasterSCU_v2", "SCU_v1", "Mini-SCU (tunnel)", "Default UAP Format", "SCU Spreadsheet", "SCU_v2", "SCU_v3",
     ],
     "Government & official archives": [
         "Blue Book (USAF)", "UK National Archives",
@@ -1359,6 +1360,14 @@ SCHEMA_FORMAT_ORIGINS = {
         "(types/flags), military, effects, entities (+morphology/tools), "
         "contact, environment, evidence, classification, assessment, scenarios "
         "(ICD-203 intention scoring), investigation, narrative and context.",
+    "MasterSCU_v2":
+        "Cost-optimised MasterSCU_v1 for batch parsing (331 → 288 fields): "
+        "drops the analyst-only `scenarios` scoring block, the "
+        "rawText/description input echoes (raw text is joined back manually; "
+        "DenseNarrativeSection is the one generated narrative), imperial "
+        "unit twins (derived in post-processing) and the duration free-text "
+        "twin. Definitions on kept fields are byte-identical to v1; all SCU "
+        "gate inputs retained.",
     "Mini-SCU (tunnel)":
         "The absolute-minimum funnel schema (~27 fields): only what the SCU "
         "five-criterion eligibility gate reads. Cheap first pass at scale — "

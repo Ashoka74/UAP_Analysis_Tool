@@ -5,8 +5,15 @@ import { StatusBadge } from '../common/StatusBadge';
 const pageTitles: Record<string, string> = {
   dashboard: 'Mission Overview',
   data: 'Data Explorer',
+  parsing: 'Parsing',
   analysis: 'Pattern Analysis',
   query: 'AI Intelligence Query',
+  rag: 'RAG Search',
+  scu: 'SCU Normalize',
+  map: 'Map',
+  magnetic: 'Magnetic Analysis',
+  clusters: 'EDA Clusters',
+  dedup: 'Dedupe Studio',
 };
 
 export function TopBar() {

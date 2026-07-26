@@ -73,7 +73,7 @@ _ROOT = os.environ.get("UAP_PIPELINE_ROOT", ".")
 DEFAULT_CONCAT       = os.path.join(_ROOT, "concat")
 DEFAULT_OUT          = os.path.join(_ROOT, "extracted")
 DEFAULT_CHUNK_PAGES  = 40     # pages per API call; tune down if still truncating
-DEFAULT_WORKERS      = 1      # concurrent files; increase for throughput
+DEFAULT_WORKERS      = 15     # concurrent files; increase for throughput
 MAX_RETRIES          = 6      # retries on 429 / 503 before giving up
 RETRY_BASE_SECS      = 5      # first wait; doubles each attempt (5, 10, 20, 40, 80, 160)
 MODEL                = "gemini-3.1-pro-preview"
@@ -90,7 +90,7 @@ Rules:
 1. Each "report" is one coherent UAP/UFO sighting description (may span one or more pages).
 2. "raw_text" must contain the verbatim text of that sighting report exactly as it appears
    in the source, including headers, field labels, and any partially redacted content.
-   Do NOT shorten, paraphrase, or omit anything.
+   Do NOT shorten, paraphrase, or omit anything. If the report is a presented as the row of a table, include the table colnames in each report.
 3. "assessment" must contain the verbatim text of any analyst assessment, conclusion,
    classification, or recommendation block associated with that report.
    Use null if none is present.

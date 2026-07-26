@@ -437,24 +437,43 @@ def get_clusters_viz():
         raise HTTPException(status_code=404, detail="Cluster visualization not found")
     return FileResponse(path)
 
+def _read_tabular_upload(filename: str, contents: bytes) -> pd.DataFrame:
+    name = (filename or "").lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(contents))
+    if name.endswith((".xlsx", ".xls")):
+        return pd.read_excel(io.BytesIO(contents))
+    if name.endswith(".json"):
+        import json as _json
+        obj = _json.loads(contents.decode("utf-8"))
+        return pd.json_normalize(obj if isinstance(obj, list) else [obj])
+    raise HTTPException(status_code=400, detail="Unsupported file type (CSV / XLSX / JSON).")
+
+
 @app.post("/api/data/upload")
 async def upload_data(file: UploadFile = File(...), state: SessionState = Depends(get_session)):
     try:
         contents = await file.read()
-        name = (file.filename or "").lower()
-        if name.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(contents))
-        elif name.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(io.BytesIO(contents))
-        elif name.endswith(".json"):
-            import json as _json
-            obj = _json.loads(contents.decode("utf-8"))
-            df = pd.json_normalize(obj if isinstance(obj, list) else [obj])
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported file type (CSV / XLSX / JSON).")
+        df = _read_tabular_upload(file.filename or "", contents)
         state.dataset = df
         state.filtered_data = df
         state.data_processed = False
+        return {"status": "ok", "filename": file.filename, "data": df_to_json(df), "column_stats": get_column_stats(df)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dedup/parse-dataset")
+async def parse_dedup_dataset(file: UploadFile = File(...)):
+    """Stateless CSV/XLSX/JSON parse — returns the same {data, column_stats}
+    shape as /api/data/upload but never touches session state. Used to load
+    a second, independent dataset for Cross-DB's between_datasets mode
+    without clobbering the Data Explorer's active dataset (Dataset A)."""
+    try:
+        contents = await file.read()
+        df = _read_tabular_upload(file.filename or "", contents)
         return {"status": "ok", "filename": file.filename, "data": df_to_json(df), "column_stats": get_column_stats(df)}
     except HTTPException:
         raise
@@ -524,6 +543,13 @@ def get_column_values(
 
     Backs the searchable categorical filter so any value can be selected,
     not just the precomputed top-N from column statistics.
+
+    Counted against state.filtered_data rather than the raw state.dataset —
+    filtered_data is the original dataset until /api/data/filter narrows it,
+    so this picks up previously-applied filters automatically: build a
+    filter on column A, click Apply, and the value counts offered when you
+    next build a filter on column B already reflect the column-A-filtered
+    subset instead of the whole original dataset.
     """
     if state.dataset is None:
         raise HTTPException(status_code=400, detail="No dataset loaded")
@@ -531,7 +557,8 @@ def get_column_values(
         raise HTTPException(status_code=404, detail=f"Column '{column}' not found")
 
     import re
-    series = state.dataset[column].astype(str)
+    df = state.filtered_data if state.filtered_data is not None else state.dataset
+    series = df[column].astype(str)
     counts = series.value_counts()
     if search:
         mask = counts.index.str.contains(re.escape(search), case=False, na=False)
@@ -635,6 +662,10 @@ def run_analysis(req: AnalysisRequest, state: SessionState = Depends(get_session
                         "y": analyzer.reduced_embeddings[mask, 1].tolist(),
                         "text": df[col].iloc[mask].astype(str).tolist(),
                         "count": int(mask.sum()),
+                        # Stable row id per point (same convention as df_to_json's
+                        # row_ids), so the client can trace a clicked point back
+                        # to its full row in the already-loaded dataset.
+                        "row_ids": df.index[mask].astype(str).tolist(),
                     })
                 cluster_viz[col] = {"traces": traces, "title": f"{col} Clusters (HDBSCAN)"}
                 _dist = pd.Series(analyzer.cluster_terms).astype(str).value_counts().head(20)
@@ -703,6 +734,7 @@ def run_analysis(req: AnalysisRequest, state: SessionState = Depends(get_session
                     "y": red_embeds[mask, 1].tolist(),
                     "text": col_data[mask].tolist(),
                     "count": int(mask.sum()),
+                    "row_ids": df.index[mask].astype(str).tolist(),
                 })
             cluster_viz[col] = {"traces": traces, "title": f"{col} Clusters (Mock)"}
             results[col] = {"cluster_count": len(top_labels), "distribution": [{"label": str(k), "count": int(v)} for k, v in vc.head(20).items()], "total_points": n}
@@ -1689,10 +1721,48 @@ class DedupDuplicateRequest(BaseModel):
 
 
 class DedupAdvancedRequest(BaseModel):
+    records: list[dict]
+    cols: Optional[list[str]] = None
     threshold: float = 0.80
     date_diff_days: int = 3
     max_km: float = 50.0
+    top_k: int = 5
+    # No default cap — the Batch Cluster pipeline is meant to screen every
+    # candidate pair, not just the first 500. Pass an int explicitly if a
+    # caller wants a preview limit.
+    max_pairs: Optional[int] = None
+    model_name: Optional[str] = None
     use_llm_judge: bool = False
+    # Explicit column overrides — when unset, falls back to the historical
+    # common-name guesses (date_time/date, latitude/lat, longitude/lon).
+    date_col: Optional[str] = None
+    lat_col: Optional[str] = None
+    lon_col: Optional[str] = None
+    location_col: Optional[str] = None
+    # Optional separate state column, pairs with city_col (preferred) or
+    # location_col for the offline US Census Gazetteer geocoding fallback
+    # (city/state -> lat/lon centroid) when there's no numeric lat/lon. If
+    # unset, a "City, ST" string in location_col alone is parsed instead.
+    state_col: Optional[str] = None
+    # Optional dedicated city column. When set, tried against state_col
+    # before location_col — a clean, already-separated city name is a far
+    # more reliable gazetteer key than one parsed out of a free-text
+    # location_col sentence ("Parking lot back of police station, Portland,
+    # Oregon"). Falls back to location_col when unset or unresolved.
+    city_col: Optional[str] = None
+    # Opt-in: enables the gazetteer tier above. Off by default — it's
+    # US-only and a place name can collide across states/countries, so it
+    # shouldn't silently activate for every location-name dataset. When
+    # off, the location gate falls straight to text-similarity on
+    # location_col when there's no numeric lat/lon.
+    use_gazetteer: bool = False
+    # Cluster-block the pairwise search (UMAP+HDBSCAN over the row
+    # embeddings) instead of a dense len(records) x len(records) similarity
+    # matrix — trades a small recall risk near cluster boundaries for
+    # comparisons that scale with block size, not dataset size. Off by
+    # default; worth turning on past roughly 20-30k rows.
+    use_cluster_blocking: bool = False
+    block_min_cluster_size: int = 15
 
 
 @app.post("/api/dedup/simple/similarity")
@@ -1717,13 +1787,307 @@ def check_dedup_duplicate(req: DedupDuplicateRequest):
 def run_dedup_advanced(req: DedupAdvancedRequest):
     try:
         return dedup_service.run_advanced_dedup(
+            records=req.records,
+            cols=req.cols,
             threshold=req.threshold,
             date_diff_days=req.date_diff_days,
             max_km=req.max_km,
-            use_llm_judge=req.use_llm_judge
+            top_k=req.top_k,
+            max_pairs=req.max_pairs,
+            model_name=req.model_name or dedup_service.HARRIER_MODEL,
+            use_llm_judge=req.use_llm_judge,
+            date_col=req.date_col,
+            lat_col=req.lat_col,
+            lon_col=req.lon_col,
+            location_col=req.location_col,
+            state_col=req.state_col,
+            city_col=req.city_col,
+            use_gazetteer=req.use_gazetteer,
+            use_cluster_blocking=req.use_cluster_blocking,
+            block_min_cluster_size=req.block_min_cluster_size,
         )
     except Exception as e:
         logger.error(f"Advanced dedup run failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DedupExportRequest(BaseModel):
+    # The exact records the dedup run was performed on (buildDedupRecords()
+    # output on the client) and the clusters that run produced — this
+    # endpoint doesn't re-run any embedding/similarity computation, it just
+    # bakes the already-computed cluster membership onto every row and
+    # zips it with a reproducibility record of how that run was configured.
+    records: list[dict]
+    clusters: list[dict]
+    id_field: str = "id"
+    # Optional: the independent text-only exact-duplicate pass from
+    # run_advanced_dedup (sim >= 0.88, date/location gates ignored). When
+    # given, adds dedup_text_* columns plus dedup_is_duplicate_any.
+    text_duplicate_clusters: Optional[list[dict]] = None
+    # Optional: Stage A's full pairwise audit trail (run_advanced_dedup's
+    # `pairs`) — every candidate pair evaluated, not just the ones that
+    # formed a cluster. When given, the zip gains pairs_audit_trail.csv and
+    # dedup_result.json (the full run state — pairs/clusters/summary/
+    # parameters — for exact replication via /api/dedup/import without
+    # recomputing embeddings).
+    pairs: Optional[list[dict]] = None
+    # Optional: the run's summary KPIs (advResult.summary), embedded verbatim
+    # into dedup_result.json alongside pairs/clusters for a full state export.
+    summary: Optional[dict] = None
+    # Optional coordinate/date mapping — the same column names (and
+    # use_gazetteer setting) the run itself used. When given, every enriched
+    # row gains _resolved_lat/_resolved_lon/_resolved_coord_source (the
+    # coordinates the location gate actually compared, incl. gazetteer
+    # centroids that previously lived only inside the pipeline), and the zip
+    # gains cluster_edges.csv — each cluster's members chained chronologically
+    # by date_col, one edge per consecutive pair, for tracking one UAP event
+    # across its sightings on a map.
+    date_col: Optional[str] = None
+    lat_col: Optional[str] = None
+    lon_col: Optional[str] = None
+    location_col: Optional[str] = None
+    state_col: Optional[str] = None
+    city_col: Optional[str] = None
+    use_gazetteer: bool = False
+    # Arbitrary run configuration to embed verbatim in the metadata file
+    # (thresholds, embedding columns, date/lat/lon/location/state column
+    # mapping, model name, gazetteer/cluster-blocking toggles, etc.) — the
+    # caller already has these as UI state, so this endpoint doesn't try to
+    # reconstruct them independently.
+    parameters: dict = {}
+
+
+@app.post("/api/dedup/export")
+def export_dedup_results(req: DedupExportRequest):
+    """Deduped dataset (original columns + dedup_cluster_id/cluster_size/
+    is_canonical/is_duplicate, plus dedup_text_*/dedup_is_duplicate_any when
+    text_duplicate_clusters is given) and a reproducibility metadata JSON
+    (run parameters + summary counts), zipped together for one download."""
+    import json
+    import zipfile
+    from fastapi.responses import Response
+
+    try:
+        records = dedup_service.attach_resolved_coords(
+            req.records,
+            lat_col=req.lat_col, lon_col=req.lon_col,
+            location_col=req.location_col, state_col=req.state_col,
+            city_col=req.city_col, use_gazetteer=req.use_gazetteer,
+        )
+        enriched = dedup_service.build_enriched_records(
+            records, req.clusters, req.id_field, text_duplicate_clusters=req.text_duplicate_clusters,
+        )
+        df = pd.DataFrame(enriched)
+        csv_buf = io.StringIO()
+        df.to_csv(csv_buf, index=False)
+
+        edges = dedup_service.build_cluster_edges(
+            enriched, req.clusters, req.id_field, date_field=req.date_col,
+        )
+        edge_cols = [
+            "cluster_id", "cluster_size", "leg_index", "from_id", "to_id",
+            "from_date", "to_date", "from_lat", "from_lon", "to_lat", "to_lon",
+            "leg_km", "from_is_canonical", "to_is_canonical",
+            "from_source_dataset", "to_source_dataset",
+            "from_canonical_similarity", "to_canonical_similarity",
+        ]
+        edges_buf = io.StringIO()
+        pd.DataFrame(edges, columns=edge_cols).to_csv(edges_buf, index=False)
+
+        # Stage A's full pairwise audit trail, flattened — a third dataset
+        # alongside the enriched raw rows and cluster edges above, so a pair
+        # like Case-1820 vs Case-1840 is present in the export even when it
+        # never reached Stage B's stricter full-convergence clustering.
+        pairs_buf = None
+        if req.pairs:
+            pairs_rows = dedup_service.build_pairs_export_rows(req.pairs)
+            pairs_buf = io.StringIO()
+            pd.DataFrame(pairs_rows, columns=dedup_service.PAIRS_EXPORT_COLUMNS).to_csv(pairs_buf, index=False)
+
+        cluster_sizes = [c.get("size", 1) for c in req.clusters]
+        text_cluster_sizes = [c.get("size", 1) for c in (req.text_duplicate_clusters or [])]
+        metadata = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "pipeline": "Batch Cluster Pipeline (dedup_service.run_advanced_dedup)",
+            "row_count": len(enriched),
+            "cluster_count": len(req.clusters),
+            "rows_in_clusters": sum(cluster_sizes),
+            "redundant_rows_saved": sum(cluster_sizes) - len(cluster_sizes),
+            "text_duplicate_cluster_count": len(req.text_duplicate_clusters or []),
+            "text_duplicate_rows_in_clusters": sum(text_cluster_sizes),
+            "text_duplicate_redundant_rows_saved": sum(text_cluster_sizes) - len(text_cluster_sizes),
+            "cluster_edges_count": len(edges),
+            "pairs_evaluated_count": len(req.pairs or []),
+            "parameters": req.parameters,
+        }
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("deduped_dataset.csv", csv_buf.getvalue())
+            # Chronological per-cluster movement chains (see build_cluster_edges)
+            # — feed from_/to_ lat/lon into a Kepler Arc or Line layer.
+            zf.writestr("cluster_edges.csv", edges_buf.getvalue())
+            if pairs_buf is not None:
+                zf.writestr("pairs_audit_trail.csv", pairs_buf.getvalue())
+            zf.writestr("dedup_run_metadata.json", json.dumps(metadata, indent=2, default=str))
+            # Full run state for /api/dedup/import — lets Dedupe Studio
+            # replicate this exact run (Stage A pairs, Stage B clusters,
+            # summary KPIs, run parameters) from the zip alone, with no
+            # embedding recomputation. deduped_dataset.csv supplies the
+            # record set itself on import.
+            if req.pairs or req.summary:
+                zf.writestr("dedup_result.json", json.dumps({
+                    "pairs": req.pairs or [],
+                    "clusters": req.clusters,
+                    "text_duplicate_clusters": req.text_duplicate_clusters or [],
+                    "summary": req.summary,
+                    "parameters": req.parameters,
+                    "id_field": req.id_field,
+                }, default=str))
+
+        return Response(
+            content=zip_buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=dedup_export.zip"},
+        )
+    except Exception as e:
+        logger.error(f"Dedup export failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dedup/import")
+async def import_dedup_zip(file: UploadFile = File(...), state: SessionState = Depends(get_session)):
+    """Restores a dedup_export.zip produced by /api/dedup/export — for
+    replicating a run (sharing it, or coming back to it later) without
+    re-fetching the source dataset or recomputing embeddings. deduped_dataset.csv
+    becomes the session's active dataset, same as /api/dedup/apply; when the
+    zip also has dedup_result.json (exported after Stage A pairs support was
+    added), that full run state is returned too so the client can repopulate
+    Dedupe Studio's Stage A/B tables exactly as they were, with zero pipeline
+    re-runs. Older zips without dedup_result.json still restore the dataset,
+    just not the Stage A/B views."""
+    import json
+    import zipfile
+
+    try:
+        raw = await file.read()
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Uploaded file isn't a valid .zip.")
+
+        names = zf.namelist()
+        if "deduped_dataset.csv" not in names:
+            raise HTTPException(status_code=400, detail="Not a dedup export zip — missing deduped_dataset.csv.")
+
+        df = pd.read_csv(io.BytesIO(zf.read("deduped_dataset.csv")))
+        state.dataset = df
+        state.filtered_data = df
+        state.data_processed = False
+
+        result: dict = {
+            "status": "ok",
+            "data": df_to_json(df),
+            "column_stats": get_column_stats(df),
+            "dedup_result": None,
+        }
+        if "dedup_result.json" in names:
+            result["dedup_result"] = json.loads(zf.read("dedup_result.json").decode("utf-8"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Dedup import failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DedupCanonicalDistanceRequest(BaseModel):
+    # Same records/clusters/id_field shape as DedupExportRequest.
+    records: list[dict]
+    clusters: list[dict]
+    id_field: str = "id"
+    # Embedding columns, reused to build the hover-text narrative preview
+    # for each point (same fallback as the pipeline itself when unset).
+    cols: Optional[list[str]] = None
+    date_col: Optional[str] = None
+    lat_col: Optional[str] = None
+    lon_col: Optional[str] = None
+    location_col: Optional[str] = None
+    state_col: Optional[str] = None
+    city_col: Optional[str] = None
+    use_gazetteer: bool = False
+
+
+@app.post("/api/dedup/canonical-distances")
+def get_dedup_canonical_distances(req: DedupCanonicalDistanceRequest):
+    """One point per non-canonical cluster member: temporal + haversine
+    distance from that cluster's canonical record, for the Stage B
+    spatio-temporal spread chart."""
+    try:
+        records = dedup_service.attach_resolved_coords(
+            req.records,
+            lat_col=req.lat_col, lon_col=req.lon_col,
+            location_col=req.location_col, state_col=req.state_col,
+            city_col=req.city_col, use_gazetteer=req.use_gazetteer,
+        )
+        points = dedup_service.build_canonical_distance_points(
+            records, req.clusters, req.id_field, date_field=req.date_col, text_cols=req.cols,
+        )
+        return {"status": "success", "points": points}
+    except Exception as e:
+        logger.error(f"Canonical distance computation failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DedupApplyRequest(BaseModel):
+    # Same records/clusters/id_field shape as DedupExportRequest — this
+    # endpoint bakes the same dedup_cluster_id/size/is_canonical/is_duplicate
+    # columns on, but loads the result as the session's active dataset
+    # instead of zipping it for download, so Data Explorer's existing
+    # filter UI can use them immediately (no download/re-upload round trip).
+    records: list[dict]
+    clusters: list[dict]
+    id_field: str = "id"
+    # Optional: the independent text-only exact-duplicate pass from
+    # run_advanced_dedup (sim >= 0.88, date/location gates ignored). When
+    # given, adds dedup_text_* columns plus dedup_is_duplicate_any.
+    text_duplicate_clusters: Optional[list[dict]] = None
+    # Optional coordinate mapping (same semantics as DedupExportRequest) —
+    # when given, applied rows gain _resolved_lat/_resolved_lon/
+    # _resolved_coord_source so the Data Explorer / map can filter and plot
+    # rows whose only original location data was a place name.
+    lat_col: Optional[str] = None
+    lon_col: Optional[str] = None
+    location_col: Optional[str] = None
+    state_col: Optional[str] = None
+    city_col: Optional[str] = None
+    use_gazetteer: bool = False
+
+
+@app.post("/api/dedup/apply")
+def apply_dedup_to_dataset(req: DedupApplyRequest, state: SessionState = Depends(get_session)):
+    """Replaces the session's active dataset with `records` + the four
+    dedup_* columns baked in — same response shape as /api/data/load and
+    /api/data/upload so the client can drop it straight into the Data
+    Explorer store. A later dedup re-run overwrites these columns rather
+    than stacking runs, since they're recomputed from the same base rows."""
+    try:
+        records = dedup_service.attach_resolved_coords(
+            req.records,
+            lat_col=req.lat_col, lon_col=req.lon_col,
+            location_col=req.location_col, state_col=req.state_col,
+            city_col=req.city_col, use_gazetteer=req.use_gazetteer,
+        )
+        enriched = dedup_service.build_enriched_records(
+            records, req.clusters, req.id_field, text_duplicate_clusters=req.text_duplicate_clusters,
+        )
+        df = pd.DataFrame(enriched)
+        state.dataset = df
+        state.filtered_data = df
+        state.data_processed = False
+        return {"status": "ok", "data": df_to_json(df), "column_stats": get_column_stats(df)}
+    except Exception as e:
+        logger.error(f"Dedup apply-to-dataset failed: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1736,7 +2100,28 @@ class DedupCrossDbRequest(BaseModel):
     max_days: int = 3
     max_km: float = 50.0
     top_k: int = 5
-    max_pairs: int = 500
+    # No default cap — the Interactive Multi-Gate view is meant to show every
+    # evaluated pair, not just the first 500. Pass an int explicitly if a
+    # caller wants a preview limit.
+    max_pairs: Optional[int] = None
+    date_col: Optional[str] = None
+    lat_col: Optional[str] = None
+    lon_col: Optional[str] = None
+    location_col: Optional[str] = None
+    state_col: Optional[str] = None
+    city_col: Optional[str] = None
+    # Dataset B's own column mapping — defaults to the Dataset A fields above
+    # when unset, so a within_dataset call (or a between_datasets call where
+    # both sides happen to share a schema) doesn't need to repeat itself.
+    date_col_b: Optional[str] = None
+    lat_col_b: Optional[str] = None
+    lon_col_b: Optional[str] = None
+    location_col_b: Optional[str] = None
+    state_col_b: Optional[str] = None
+    city_col_b: Optional[str] = None
+    use_gazetteer: bool = False
+    use_cluster_blocking: bool = False
+    block_min_cluster_size: int = 15
 
 
 @app.post("/api/dedup/cross-db/pipeline")
@@ -1751,7 +2136,22 @@ def run_dedup_cross_db_pipeline(req: DedupCrossDbRequest):
             max_days=req.max_days,
             max_km=req.max_km,
             top_k=req.top_k,
-            max_pairs=req.max_pairs
+            max_pairs=req.max_pairs,
+            date_col=req.date_col,
+            lat_col=req.lat_col,
+            lon_col=req.lon_col,
+            location_col=req.location_col,
+            state_col=req.state_col,
+            city_col=req.city_col,
+            date_col_b=req.date_col_b,
+            lat_col_b=req.lat_col_b,
+            lon_col_b=req.lon_col_b,
+            location_col_b=req.location_col_b,
+            state_col_b=req.state_col_b,
+            city_col_b=req.city_col_b,
+            use_gazetteer=req.use_gazetteer,
+            use_cluster_blocking=req.use_cluster_blocking,
+            block_min_cluster_size=req.block_min_cluster_size,
         )
     except Exception as e:
         logger.error(f"Cross-DB dedup pipeline failed: {traceback.format_exc()}")

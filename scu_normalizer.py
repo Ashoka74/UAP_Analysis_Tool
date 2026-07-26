@@ -145,6 +145,11 @@ CANONICAL_ALIASES: dict[str, tuple[str, ...]] = {
     "investigation.source": ("source.name",),
     "sightingDetails.trustScore": ("assessment.trustScore",),
     "sightingDetails.uapCharacteristics.presenceHumanoids": ("entities.presenceHumanoids",),
+    # For datasets without a witness.type column (e.g. Mini-SCU parses) the
+    # leaf heuristic mis-matches it to location.type; pin it to witness.roles,
+    # the same Military/Public/... vocabulary in array form. Exact matches
+    # still win, and the gate prefers witness.roles anyway when both exist.
+    "witness.type": ("witness.roles",),
 }
 
 

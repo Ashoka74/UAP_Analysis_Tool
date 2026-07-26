@@ -191,3 +191,4 @@ Untitled.ipynb
 # and pyproject's `requires-python` are the real pins.
 .python-version
 
+.gstack/

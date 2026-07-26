@@ -418,7 +418,7 @@
       "isSplit": false
     },
     "mapStyle": {
-      "styleType": "DarkMatter",
+      "styleType": "dark",
       "topLayerGroups": {},
       "visibleLayerGroups": {
         "label": true,

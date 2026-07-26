@@ -18,24 +18,27 @@ export function AnalysisPage() {
   const {
     data, dataLoaded, analysisResults, setAnalysisResults, analysisRunning, setAnalysisRunning, setPage,
     setCramersSelected, setCramersAutoRun,
+    analysisActiveTab, setAnalysisActiveTab,
+    analysisXgbHandoff: assocXgboost, analysisXgbHandoffPca: assocPca,
+    analysisXgbHandoffImpute: assocImpute, setAnalysisXgbHandoff,
     openaiKey, setOpenaiKey, geminiKey, setGeminiKey, deepseekKey, setDeepseekKey,
   } = useStore();
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('clusters');
-  // XGBoost feature importance handed over from the Cramér's V explorer. The
-  // optional `assocPca` carries the 2nd-pass (PCA latent-index) payload alongside.
-  const [assocXgboost, setAssocXgboost] = useState<Record<string, XGBoostResult> | null>(null);
-  const [assocPca, setAssocPca] = useState<XgboostPcaResponse | null>(null);
-  const [assocImpute, setAssocImpute] = useState<XgboostImputeResponse | null>(null);
+  // Store-backed (not useState) — AnalysisPage unmounts on page navigation
+  // (see App.tsx), so local state here doesn't survive a trip to another tab
+  // and back. Same reasoning for the Cramér's V hand-off results above:
+  // assocXgboost/assocPca/assocImpute now come from the store (previously
+  // local useState here, which silently dropped the XGBoost run handed off
+  // from the Cramér's V explorer the moment you left the page).
+  const activeTab = analysisActiveTab as TabId;
+  const setActiveTab = (tab: TabId) => setAnalysisActiveTab(tab);
 
   const handleAssocXgboost = (
     r: Record<string, XGBoostResult>,
     extras?: { pca?: XgboostPcaResponse; impute?: XgboostImputeResponse },
   ) => {
-    setAssocXgboost(r);
-    setAssocPca(extras?.pca ?? null);
-    setAssocImpute(extras?.impute ?? null);
+    setAnalysisXgbHandoff(r, extras);
     setActiveTab('xgboost');
   };
 
@@ -371,7 +374,7 @@ export function AnalysisPage() {
         <>
           {/* Cluster visualizations */}
           {activeTab === 'clusters' && (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="flex flex-col gap-4">
               {Object.entries(results.cluster_viz).map(([col, viz]) => (
                 <Panel key={col} title={viz.title}>
                   <ClusterVisualization viz={viz} />

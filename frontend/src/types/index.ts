@@ -38,6 +38,9 @@ export interface ClusterTrace {
   y: number[];
   text: string[];
   count: number;
+  // Stable row id per point (aligned with DataResponse.row_ids), so a
+  // clicked point can be traced back to its full row in the loaded dataset.
+  row_ids: string[];
 }
 
 export interface ClusterViz {
@@ -411,29 +414,88 @@ export interface SimpleDuplicateResponse {
   };
 }
 
-export interface FlaggedPair {
-  id_a: string;
-  id_b: string;
-  similarity: number;
-  llm_same_event: boolean;
-  llm_reason: string;
+export interface DedupClusterMemberPreview {
+  id: string;
+  values: Record<string, unknown>;
+  // Cosine similarity (0-1) of this member's embedding text against its
+  // cluster's canonical row — 1.0 for the canonical row itself. Absent for
+  // clusters computed before this field existed. High values (~0.9+) read
+  // as likely the same report re-filed; lower-but-still-clustered values
+  // read as a distinct witness account of the same event.
+  canonical_similarity?: number;
+  // Resolved ISO date string (via the run's date_col), independent of
+  // whether a date column happened to be part of the embedding preview
+  // columns — feeds the Cluster Preview's "sort chronologically" button.
+  date?: string;
+}
+
+export interface DedupCluster {
+  cluster_id: string;
+  size: number;
+  member_ids: string[];
+  canonical_id: string;
+  // The embedding columns the run was configured with — what member_previews
+  // below shows for every cluster member, not just the canonical row.
+  preview_cols: string[];
+  member_previews: DedupClusterMemberPreview[];
+}
+
+// Present in the summary only when use_cluster_blocking was on for that run —
+// how many UMAP+HDBSCAN blocks the pairwise search was restricted to, and how
+// much that cut the comparison count vs. the full dense matrix.
+export interface DedupBlockStats {
+  block_count: number;
+  noise_block_size: number;
+  full_matrix_cells: number;
+  compared_cells: number;
 }
 
 export interface AdvancedDedupResponse {
   status: string;
-  parameters: {
+  message?: string; // present when status !== 'success'
+  parameters?: {
     threshold: number;
     date_diff_days: number;
     max_km: number;
     use_llm_judge: boolean;
   };
-  summary: {
+  summary?: {
+    total_pairs_evaluated: number;
+    bins: {
+      exact_duplicate: number;
+      strong_similar: number;
+      moderate_similar: number;
+      distinct: number;
+    };
+    gate_counts: {
+      similar_text: number;
+      similar_date: number;
+      similar_location: number;
+      similar_text_date: number;
+      similar_both: number;
+      similar_all: number;
+    };
+    block_stats?: DedupBlockStats | null;
     total_clusters: number;
     rows_in_clusters: number;
     redundant_rows_saved: number;
     flagged_pairs_count: number;
+    // Independent text-only exact-duplicate pass (sim >= 0.88, date/location
+    // gates ignored) — catches clear duplicates Stage B's stricter gate
+    // rejected, e.g. because location couldn't be resolved.
+    text_duplicate_clusters_count: number;
+    text_duplicate_rows_in_clusters: number;
+    text_duplicate_redundant_rows_saved: number;
+    // Rows that are a non-canonical member of *either* clustering — the
+    // count you'd actually drop keeping only canonicals from both passes.
+    combined_redundant_rows_saved: number;
   };
-  flagged_pairs: FlaggedPair[];
+  // Stage A — full multi-gate pairwise audit trail (same shape as Cross-DB's pairs)
+  pairs?: CrossDbPair[];
+  // Stage B — strict (text+date+location) union-find clusters
+  clusters?: DedupCluster[];
+  // Text-only exact-duplicate clusters — same shape, independent grouping
+  text_duplicate_clusters?: DedupCluster[];
 }
 
 export interface CrossDbPair {
@@ -442,13 +504,34 @@ export interface CrossDbPair {
   similarity: number;
   bin: 'exact_duplicate' | 'strong_similar' | 'moderate_similar' | 'distinct';
   haversine_km: number | null;
+  // Text-similarity fallback for the location gate when no numeric lat/lon
+  // resolved for this pair (e.g. only a location-name column was mapped).
+  location_name_similarity: number | null;
+  // How the location gate was evaluated: 'coords' (real lat/lon),
+  // 'gazetteer' (offline US city/state -> centroid lookup), 'name_text'
+  // (fuzzy string match), or null if nothing resolved.
+  location_source: 'coords' | 'gazetteer' | 'name_text' | null;
   date_diff_days: number | null;
   text_a_preview: string;
   text_b_preview: string;
+  // Full (untruncated) narrative text and resolved date/coords — present on
+  // runs computed after these fields were added; used by the pairs export,
+  // not rendered directly in the UI (which uses the *_preview fields).
+  text_a?: string;
+  text_b?: string;
+  date_a?: string | null;
+  date_b?: string | null;
+  lat_a?: number | null;
+  lon_a?: number | null;
+  lat_b?: number | null;
+  lon_b?: number | null;
+  row_a?: Record<string, any>;
+  row_b?: Record<string, any>;
   flags: {
     is_similar_text: boolean;
     is_similar_date: boolean;
     is_similar_location: boolean;
+    is_similar_text_date: boolean;
     is_similar_both: boolean;
     is_similar_all: boolean;
   };
@@ -469,10 +552,27 @@ export interface CrossDbPipelineResponse {
       similar_text: number;
       similar_date: number;
       similar_location: number;
+      similar_text_date: number;
       similar_both: number;
       similar_all: number;
     };
+    block_stats?: DedupBlockStats | null;
   };
   pairs: CrossDbPair[];
+}
+
+// One non-canonical cluster member's temporal + spatial distance from its
+// cluster's canonical record — feeds the Stage B spatio-temporal spread
+// chart (GET via api.getCanonicalDistances).
+export interface CanonicalDistancePoint {
+  cluster_id: string;
+  cluster_size: number;
+  member_id: string;
+  canonical_id: string;
+  temporal_distance_days: number | null;
+  haversine_km: number | null;
+  canonical_similarity?: number;
+  member_text: string;
+  canonical_text: string;
 }
 

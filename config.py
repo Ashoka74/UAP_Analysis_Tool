@@ -852,6 +852,32 @@ except Exception:
     FORMAT_MASTER_SCU_V1 = FORMAT_SCU_V3
 
 # ---------------------------------------------------------------------------
+# FORMAT_MASTER_SCU_V2 — "MasterSCU v2" parsing schema (cost-optimised)
+#
+# MasterSCU_v1 minus the fields that inflate batch-parsing cost without
+# adding parse-time information (331 → 288 leaves):
+#   - `scenarios` block (33 leaves): ICD-203 analyst scoring assigned
+#     downstream, never extractable from the source text
+#   - `narrative.rawText` / `narrative.description`: input echoes — the model
+#     re-emitting its own input; raw text is joined back on manually and only
+#     `DenseNarrativeSection` is kept as the one generated narrative
+#   - every imperial unit twin (feet/mi/mph, `entities.Height`): kept metric
+#     only; the twin is a deterministic multiply in post-processing
+#   - `date_time.duration` free-text (duration_min kept)
+# Field definitions on everything kept are byte-identical to v1, so
+# extraction quality does not degrade. All scu_normalizer gate inputs are
+# retained. Falls back to FORMAT_MASTER_SCU_V1 if the JSON file is
+# unavailable.
+# ---------------------------------------------------------------------------
+try:
+    FORMAT_MASTER_SCU_V2 = _json.loads(
+        (_Path(__file__).resolve().parent / "uap_master_schema_v2.json")
+        .read_text(encoding="utf-8")
+    )
+except Exception:
+    FORMAT_MASTER_SCU_V2 = FORMAT_MASTER_SCU_V1
+
+# ---------------------------------------------------------------------------
 # Merged compact schema — used by the Markdown-folder ingestion agent.
 # Covers the essential fields from both FORMAT_LONG (sightingDetails) and
 # FORMAT_LONG_XLSX (SCU groups) so the result feeds either downstream pipeline.
