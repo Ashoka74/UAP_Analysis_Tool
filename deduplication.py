@@ -90,12 +90,14 @@ _LAT_COL_HINTS = ["latitude", "lat", "sightingDetails.location.latitude"]
 _LON_COL_HINTS = ["longitude", "lon", "lng", "sightingDetails.location.longitude"]
 _LOCATION_NAME_HINTS = ["location.name", "sightingDetails.location.name", "location_name", "city", "city_name", "location.city"]
 _STATE_COL_HINTS = ["location.state", "location_state_norm", "state", "sightingDetails.location.state"]
+_CITY_COL_HINTS = ["location.city", "city", "city_name", "sightingDetails.location.city"]
 
 _auto_date_col = next((c for c in _DATE_COL_HINTS if c in df_active.columns), None)
 _auto_lat_col = next((c for c in _LAT_COL_HINTS if c in df_active.columns), None)
 _auto_lon_col = next((c for c in _LON_COL_HINTS if c in df_active.columns), None)
 _auto_loc_name_col = next((c for c in _LOCATION_NAME_HINTS if c in df_active.columns), None)
 _auto_state_col = next((c for c in _STATE_COL_HINTS if c in df_active.columns), None)
+_auto_city_col = next((c for c in _CITY_COL_HINTS if c in df_active.columns), None)
 
 fm1, fm2 = st.columns([1, 2])
 with fm1:
@@ -112,7 +114,7 @@ with fm2:
         index=0 if (_auto_lat_col and _auto_lon_col) else (1 if _auto_loc_name_col else 0),
         key="dedup_location_mode",
     )
-    lat_col = lon_col = location_col = state_col = None
+    lat_col = lon_col = location_col = state_col = city_col = None
     use_gazetteer = False
     if location_mode.startswith("Lat/Lon"):
         lc1, lc2 = st.columns(2)
@@ -129,24 +131,36 @@ with fm2:
             lon_col = None if _lon_sel == "(none)" else _lon_sel
     else:
         _loc_options = ["(none)"] + list(df_active.columns)
-        loc_c1, loc_c2 = st.columns(2)
+        loc_c1, loc_c2, loc_c3 = st.columns(3)
         with loc_c1:
             _loc_sel = st.selectbox(
-                "Location Name Column (city)", options=_loc_options,
+                "Location Name Column", options=_loc_options,
                 index=_loc_options.index(_auto_loc_name_col) if _auto_loc_name_col in _loc_options else 0,
                 key="dedup_location_col",
-                help="US city/place name. Matched via fuzzy text by default; enable the US "
-                     "Census Gazetteer lookup below for a real lat/lon-based distance instead.",
+                help="Free-text place description. Matched via fuzzy text by default, or parsed "
+                     "for the gazetteer lookup below when no City Column is set.",
             )
             location_col = None if _loc_sel == "(none)" else _loc_sel
         with loc_c2:
+            _city_sel = st.selectbox(
+                "City Column (optional, preferred)", options=_loc_options,
+                index=_loc_options.index(_auto_city_col) if _auto_city_col in _loc_options else 0,
+                key="dedup_city_col",
+                help="A clean, already-separated city name is a far more reliable gazetteer key "
+                     "than one parsed out of a free-text Location Name sentence (e.g. 'Parking "
+                     "lot back of police station, Portland, Oregon'). Falls back to Location "
+                     "Name when left as (none).",
+            )
+            city_col = None if _city_sel == "(none)" else _city_sel
+        with loc_c3:
             _state_sel = st.selectbox(
                 "State Column (optional)", options=_loc_options,
                 index=_loc_options.index(_auto_state_col) if _auto_state_col in _loc_options else 0,
                 key="dedup_state_col",
-                help="Improves gazetteer match accuracy (many city names repeat across states). "
-                     "If left as (none) and the Location Name Column contains a combined "
-                     "'City, ST' string, the state is parsed out of that instead.",
+                help="Pairs with City Column (preferred) or Location Name Column for gazetteer "
+                     "matching (many city names repeat across states). If left as (none) and "
+                     "Location Name contains a combined 'City, ST' string, the state is parsed "
+                     "out of that instead.",
             )
             state_col = None if _state_sel == "(none)" else _state_sel
         use_gazetteer = st.toggle(
@@ -344,6 +358,7 @@ with tab2:
                 lon_col=lon_col,
                 location_col=location_col,
                 state_col=state_col,
+                city_col=city_col,
                 use_gazetteer=use_gazetteer,
                 use_cluster_blocking=use_cluster_blocking,
                 block_min_cluster_size=block_min_cluster_size,
@@ -487,6 +502,7 @@ with tab3:
                 lon_col=lon_col,
                 location_col=location_col,
                 state_col=state_col,
+                city_col=city_col,
                 use_gazetteer=use_gazetteer,
                 use_cluster_blocking=use_cluster_blocking,
                 block_min_cluster_size=block_min_cluster_size,

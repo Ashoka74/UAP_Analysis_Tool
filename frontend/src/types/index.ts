@@ -417,6 +417,16 @@ export interface SimpleDuplicateResponse {
 export interface DedupClusterMemberPreview {
   id: string;
   values: Record<string, unknown>;
+  // Cosine similarity (0-1) of this member's embedding text against its
+  // cluster's canonical row — 1.0 for the canonical row itself. Absent for
+  // clusters computed before this field existed. High values (~0.9+) read
+  // as likely the same report re-filed; lower-but-still-clustered values
+  // read as a distinct witness account of the same event.
+  canonical_similarity?: number;
+  // Resolved ISO date string (via the run's date_col), independent of
+  // whether a date column happened to be part of the embedding preview
+  // columns — feeds the Cluster Preview's "sort chronologically" button.
+  date?: string;
 }
 
 export interface DedupCluster {
@@ -470,11 +480,22 @@ export interface AdvancedDedupResponse {
     rows_in_clusters: number;
     redundant_rows_saved: number;
     flagged_pairs_count: number;
+    // Independent text-only exact-duplicate pass (sim >= 0.88, date/location
+    // gates ignored) — catches clear duplicates Stage B's stricter gate
+    // rejected, e.g. because location couldn't be resolved.
+    text_duplicate_clusters_count: number;
+    text_duplicate_rows_in_clusters: number;
+    text_duplicate_redundant_rows_saved: number;
+    // Rows that are a non-canonical member of *either* clustering — the
+    // count you'd actually drop keeping only canonicals from both passes.
+    combined_redundant_rows_saved: number;
   };
   // Stage A — full multi-gate pairwise audit trail (same shape as Cross-DB's pairs)
   pairs?: CrossDbPair[];
-  // Stage B — union-find clusters formed from the is_similar_all edges above
+  // Stage B — strict (text+date+location) union-find clusters
   clusters?: DedupCluster[];
+  // Text-only exact-duplicate clusters — same shape, independent grouping
+  text_duplicate_clusters?: DedupCluster[];
 }
 
 export interface CrossDbPair {
@@ -493,6 +514,17 @@ export interface CrossDbPair {
   date_diff_days: number | null;
   text_a_preview: string;
   text_b_preview: string;
+  // Full (untruncated) narrative text and resolved date/coords — present on
+  // runs computed after these fields were added; used by the pairs export,
+  // not rendered directly in the UI (which uses the *_preview fields).
+  text_a?: string;
+  text_b?: string;
+  date_a?: string | null;
+  date_b?: string | null;
+  lat_a?: number | null;
+  lon_a?: number | null;
+  lat_b?: number | null;
+  lon_b?: number | null;
   row_a?: Record<string, any>;
   row_b?: Record<string, any>;
   flags: {
@@ -527,5 +559,20 @@ export interface CrossDbPipelineResponse {
     block_stats?: DedupBlockStats | null;
   };
   pairs: CrossDbPair[];
+}
+
+// One non-canonical cluster member's temporal + spatial distance from its
+// cluster's canonical record — feeds the Stage B spatio-temporal spread
+// chart (GET via api.getCanonicalDistances).
+export interface CanonicalDistancePoint {
+  cluster_id: string;
+  cluster_size: number;
+  member_id: string;
+  canonical_id: string;
+  temporal_distance_days: number | null;
+  haversine_km: number | null;
+  canonical_similarity?: number;
+  member_text: string;
+  canonical_text: string;
 }
 

@@ -20,6 +20,7 @@ import type {
   XgboostImportanceResponse,
   XgboostPcaResponse,
   XgboostImputeResponse,
+  CanonicalDistancePoint,
 } from '../types';
 
 // API origin is configurable for split deployments (e.g. frontend on Vercel,
@@ -69,6 +70,7 @@ export const api = {
     lon_col?: string;
     location_col?: string;
     state_col?: string;
+    city_col?: string;
     use_gazetteer?: boolean;
     use_cluster_blocking?: boolean;
     block_min_cluster_size?: number;
@@ -93,6 +95,22 @@ export const api = {
     records: Record<string, unknown>[];
     clusters: Record<string, unknown>[];
     id_field?: string;
+    text_duplicate_clusters?: Record<string, unknown>[];
+    // Stage A's full pairwise audit trail (advResult.pairs) — when given,
+    // the zip gains pairs_audit_trail.csv and dedup_result.json (the full
+    // run state, for replicating this run later via importDedupZip with no
+    // recomputation).
+    pairs?: Record<string, unknown>[];
+    summary?: Record<string, unknown>;
+    // Coordinate/date mapping the run used — enables _resolved_lat/_resolved_lon
+    // on every exported row plus the chronological cluster_edges.csv in the zip.
+    date_col?: string;
+    lat_col?: string;
+    lon_col?: string;
+    location_col?: string;
+    state_col?: string;
+    city_col?: string;
+    use_gazetteer?: boolean;
     parameters?: Record<string, unknown>;
   }): Promise<void> {
     const res = await fetch(`${BASE}/dedup/export`, {
@@ -120,11 +138,68 @@ export const api = {
     records: Record<string, unknown>[];
     clusters: Record<string, unknown>[];
     id_field?: string;
+    text_duplicate_clusters?: Record<string, unknown>[];
+    lat_col?: string;
+    lon_col?: string;
+    location_col?: string;
+    state_col?: string;
+    city_col?: string;
+    use_gazetteer?: boolean;
   }): Promise<LoadDataResponse> {
     return request('/dedup/apply', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  // Every non-canonical cluster member's temporal + haversine distance from
+  // its cluster's canonical record — feeds the Stage B spatio-temporal
+  // spread chart.
+  getCanonicalDistances(payload: {
+    records: Record<string, unknown>[];
+    clusters: Record<string, unknown>[];
+    id_field?: string;
+    cols?: string[];
+    date_col?: string;
+    lat_col?: string;
+    lon_col?: string;
+    location_col?: string;
+    state_col?: string;
+    city_col?: string;
+    use_gazetteer?: boolean;
+  }): Promise<{ status: string; points: CanonicalDistancePoint[] }> {
+    return request('/dedup/canonical-distances', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Restores a dedup_export.zip (from exportDedupResults) — for replicating
+  // a run later without re-fetching the source dataset or recomputing
+  // embeddings. Loads deduped_dataset.csv as the active dataset (same shape
+  // as uploadFile/applyDedupToDataset) and, when the zip has
+  // dedup_result.json, returns the full Stage A/B run state too.
+  async importDedupZip(file: File): Promise<{
+    status: string;
+    data: LoadDataResponse['data'];
+    column_stats: LoadDataResponse['column_stats'];
+    dedup_result: {
+      pairs: Record<string, unknown>[];
+      clusters: Record<string, unknown>[];
+      text_duplicate_clusters: Record<string, unknown>[];
+      summary: Record<string, unknown> | null;
+      parameters: Record<string, unknown>;
+      id_field: string;
+    } | null;
+  }> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE}/dedup/import`, { method: 'POST', body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(body.detail || `Import failed: ${res.status}`);
+    }
+    return res.json();
   },
 
   runMagnetic(payload: { lat_col: string; lon_col: string; date_col: string; distance: number }): Promise<any> {
@@ -147,6 +222,24 @@ export const api = {
         if (!res.ok) {
           const body = await res.json().catch(() => ({ detail: res.statusText }));
           throw new Error(body.detail || `Upload failed: ${res.status}`);
+        }
+        return res.json();
+      }
+    );
+  },
+
+  // Stateless CSV/XLSX/JSON parse — same shape as uploadFile, but never
+  // touches the session's active dataset. Used to load a second, independent
+  // dataset for Cross-DB's between_datasets comparison without clobbering
+  // the Data Explorer's Dataset A.
+  parseDatasetFile(file: File): Promise<LoadDataResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/dedup/parse-dataset`, { method: 'POST', body: form }).then(
+      async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(body.detail || `Parse failed: ${res.status}`);
         }
         return res.json();
       }

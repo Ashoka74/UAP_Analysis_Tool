@@ -16,6 +16,28 @@ logger = logging.getLogger(__name__)
 # Selectable embedding models — mirrors the picker in rag_search.py so Dedupe
 # Studio and Smart-Search offer the same three options from one place.
 HARRIER_MODEL = "microsoft/harrier-oss-v1-270m"
+DEFAULT_EMBED_COLS = ["witness.notes", "description", "case_text.text", "narrative", "text"]
+
+# Opportunistically surfaced in the cluster preview (Stage B) alongside
+# whatever embedding columns the caller picked — free-text craft
+# color/shape descriptors are the fastest way for a human to visually
+# corroborate "this cluster really is one event, multiple witnesses" (colors
+# agree) vs. "this might be a bad merge" (colors disagree), independent of
+# whichever columns were used for the text-similarity comparison itself.
+QUICK_GLANCE_COLS = [
+    "craft.colour", "sightingDetails.uapCharacteristics.color", "sightingDetails.craft.colour",
+    "craft.primary_shape", "sightingDetails.uapCharacteristics.shape", "sightingDetails.craft.primary_shape",
+    # Witness count/role — a cluster with radically different witness counts
+    # per member (e.g. "1" vs "12") is a signal worth seeing at a glance
+    # even when witness.notes itself wasn't picked as an embedding column.
+    "witness.count", "witness_count_num", "sightingDetails.observerDetails.numberOfWitnesses",
+    "witness.roles", "witness_primary_role",
+    # Set by the React app's Database Pool (Cross-DB) run when pooling
+    # multiple source databases into one comparison — surfacing it here
+    # means a cluster spanning several databases visibly shows which ones,
+    # not just "5 similar reports" with no indication they're cross-source.
+    "_source_dataset",
+]
 EMBEDDING_MODEL_OPTIONS = [
     HARRIER_MODEL,
     "sentence-transformers/all-MiniLM-L6-v2",
@@ -184,23 +206,37 @@ def _resolve_effective_coord(
     location_col: Optional[str],
     state_col: Optional[str],
     use_gazetteer: bool = False,
+    city_col: Optional[str] = None,
 ):
     """(lat, lon) for a row plus how it was obtained: numeric lat/lon
     columns first, then — only when use_gazetteer=True — an offline US
-    Census Gazetteer lookup off location_col (+ state_col, or a parsed
-    "City, ST" in location_col itself when there's no separate state
-    column). Returns ((lat, lon), 'coords' | 'gazetteer') or None if
-    neither resolves — at which point the caller falls back further to
-    text similarity. Off by default: it's US-only and a place name can
-    collide across states/countries, so it's opt-in like cluster-blocking
-    rather than a silent default for every location-name dataset."""
+    Census Gazetteer lookup. When a dedicated city_col is given, it's tried
+    first against state_col: a clean, already-separated city name is a far
+    more reliable gazetteer key than anything pulled out of a free-text
+    location_col (which is often a full sentence — "Parking lot back of
+    police station, Portland, Oregon" — that a naive comma-split mis-parses).
+    Falls back to location_col (+ state_col, or a parsed "City, ST" in
+    location_col itself when there's no separate state column) when city_col
+    isn't given or doesn't resolve. Returns ((lat, lon), 'coords' |
+    'gazetteer') or None if nothing resolves — at which point the caller
+    falls back further to text similarity. Off by default: it's US-only and
+    a place name can collide across states/countries, so it's opt-in like
+    cluster-blocking rather than a silent default for every location-name
+    dataset."""
     coord = _resolve_coord(rec, lat_col, lon_col)
     if coord:
         return coord, "coords"
-    if use_gazetteer and location_col:
+    if not use_gazetteer:
+        return None
+    state_val = rec.get(state_col) if state_col else None
+    if city_col:
+        geo = us_gazetteer.geocode_us_place(rec.get(city_col), state_val)
+        if geo:
+            return geo, "gazetteer"
+    if location_col:
         raw_loc = rec.get(location_col)
-        if state_col:
-            geo = us_gazetteer.geocode_us_place(raw_loc, rec.get(state_col))
+        if state_val:
+            geo = us_gazetteer.geocode_us_place(raw_loc, state_val)
         else:
             parsed = us_gazetteer.parse_city_state(raw_loc)
             geo = us_gazetteer.geocode_us_place(*parsed) if parsed else None
@@ -307,6 +343,26 @@ def check_duplicate(record_a: Dict[str, Any], record_b: Dict[str, Any],
         }
     }
 
+def _build_row_text(rec: Dict[str, Any], cols: List[str]) -> str:
+    """Concatenate the selected embedding columns into the one string that
+    actually gets encoded — shared by the pairwise engine and Stage B's
+    canonical-similarity scoring, so "similarity" always means the same
+    thing regardless of which stage computed it."""
+    parts = []
+    for c in cols:
+        v = str(rec.get(c, "")).strip()
+        if v and v.lower() not in ("nan", "none", "null"):
+            parts.append(v)
+    if not parts:
+        # Fallback to any narrative text
+        for fallback in ("narrative", "text", "description", "witness.notes"):
+            v = str(rec.get(fallback, "")).strip()
+            if v and v.lower() not in ("nan", "none", "null"):
+                parts.append(v)
+                break
+    return " - ".join(parts) if parts else "Unknown Report"
+
+
 class _UnionFind:
     """Minimal union-find over string node ids (dedup record ids)."""
 
@@ -345,10 +401,12 @@ def build_enriched_records(
     records: List[Dict[str, Any]],
     clusters: List[Dict[str, Any]],
     id_field: str = "id",
+    text_duplicate_clusters: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Bake Stage B's cluster membership onto every original row, for export
     to (or merging back into) the Data Explorer dataset — not just the rows
-    that showed up in a pair. Adds four columns:
+    that showed up in a pair. Adds four columns from the strict (text+date+
+    location) clustering:
       dedup_cluster_id     — the cluster's id, or None if never grouped
       dedup_cluster_size   — members in the cluster (1 for an unclustered row)
       dedup_is_canonical   — True for the one row kept per cluster (and,
@@ -359,6 +417,17 @@ def build_enriched_records(
     A cluster with size > 1 is exactly the "multiple witnesses reported the
     same event" case the Data Explorer view wants to surface.
 
+    When text_duplicate_clusters is given (the independent text-only
+    exact-duplicate pass — sim >= 0.88, date/location gates ignored — from
+    run_advanced_dedup), four more columns are added the same way, prefixed
+    dedup_text_*, plus a combined convenience flag:
+      dedup_is_duplicate_any — True if the row is a non-canonical member of
+                                *either* clustering. This is the column to
+                                filter out to de-duplicate under both
+                                criteria at once — it can never drop every
+                                member of a connected group, since each
+                                clustering always keeps its own canonical.
+
     id_field mirrors the id fallback run_cross_db_pipeline uses internally
     (id -> case_id -> "ROW-{n}") so membership lookups line up even for
     rows that had no explicit id column.
@@ -367,6 +436,11 @@ def build_enriched_records(
     for c in clusters:
         for member_id in c.get("member_ids", []):
             cluster_by_member[member_id] = c
+
+    text_cluster_by_member: Dict[str, Dict[str, Any]] = {}
+    for c in (text_duplicate_clusters or []):
+        for member_id in c.get("member_ids", []):
+            text_cluster_by_member[member_id] = c
 
     enriched = []
     for i, rec in enumerate(records):
@@ -383,8 +457,316 @@ def build_enriched_records(
             out["dedup_cluster_size"] = 1
             out["dedup_is_canonical"] = True
             out["dedup_is_duplicate"] = False
+
+        if text_duplicate_clusters is not None:
+            tc = text_cluster_by_member.get(rid)
+            if tc:
+                out["dedup_text_cluster_id"] = tc["cluster_id"]
+                out["dedup_text_cluster_size"] = tc["size"]
+                out["dedup_text_is_canonical"] = (rid == tc["canonical_id"])
+                out["dedup_text_is_duplicate"] = (tc["size"] > 1 and rid != tc["canonical_id"])
+            else:
+                out["dedup_text_cluster_id"] = None
+                out["dedup_text_cluster_size"] = 1
+                out["dedup_text_is_canonical"] = True
+                out["dedup_text_is_duplicate"] = False
+            out["dedup_is_duplicate_any"] = bool(out["dedup_is_duplicate"] or out["dedup_text_is_duplicate"])
+
         enriched.append(out)
     return enriched
+
+
+def attach_resolved_coords(
+    records: List[Dict[str, Any]],
+    lat_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    location_col: Optional[str] = None,
+    state_col: Optional[str] = None,
+    city_col: Optional[str] = None,
+    use_gazetteer: bool = False,
+) -> List[Dict[str, Any]]:
+    """Write each row's effective coordinates back onto it as three columns:
+      _resolved_lat / _resolved_lon  — what the location gate actually used
+      _resolved_coord_source        — 'coords' | 'gazetteer' | None
+
+    The pipeline resolves these internally per row (numeric lat/lon columns
+    first, then the opt-in gazetteer city/state centroid) but never persisted
+    them — so a dataset whose only location data is a city name exported with
+    empty lat/lon and could not be mapped at all, even though the location
+    gate had real coordinates for it during the run. Same resolution
+    function, same tier order, same use_gazetteer gating as the pipeline, so
+    the exported coordinates are exactly what the km gate compared."""
+    out = []
+    for rec in records:
+        r = dict(rec)
+        resolved = _resolve_effective_coord(rec, lat_col, lon_col, location_col, state_col, use_gazetteer, city_col)
+        if resolved:
+            (lat, lon), source = resolved
+            r["_resolved_lat"] = lat
+            r["_resolved_lon"] = lon
+            r["_resolved_coord_source"] = source
+        else:
+            r["_resolved_lat"] = None
+            r["_resolved_lon"] = None
+            r["_resolved_coord_source"] = None
+        out.append(r)
+    return out
+
+
+def build_cluster_edges(
+    enriched_records: List[Dict[str, Any]],
+    clusters: List[Dict[str, Any]],
+    id_field: str = "id",
+    date_field: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Per-cluster chronological movement chain, for tracking one UAP event
+    across its sightings on a map: within each cluster, members are ordered
+    by date and each consecutive pair becomes one edge (leg 1: earliest ->
+    next, leg 2: next -> next...), rather than a star of members around the
+    canonical row — following the legs in order follows the phenomenon
+    through time and space. Undated members sort to the end of their chain;
+    legs whose endpoints lack resolved coordinates still appear (the
+    chronology is still meaningful) but with empty lat/lon and no leg_km.
+
+    Rows are sorted by each cluster's earliest date, then cluster, then leg
+    order — so the file reads chronologically overall while every cluster's
+    chain stays contiguous. Feed it to a Kepler Arc/Line layer via the
+    from_/to_ lat/lon columns; color by leg_km or to_canonical_similarity.
+    """
+    rec_by_id: Dict[str, Dict[str, Any]] = {}
+    for i, rec in enumerate(enriched_records):
+        rid = str(rec.get(id_field) or rec.get("case_id") or f"ROW-{i + 1}")
+        rec_by_id[rid] = rec
+
+    def _member_date(rid: str) -> Optional[datetime]:
+        rec = rec_by_id.get(rid) or {}
+        return _parse_date(rec.get(date_field)) if date_field else None
+
+    keyed_edges: List[tuple] = []
+    for c in clusters:
+        sim_by_id = {m.get("id"): m.get("canonical_similarity") for m in c.get("member_previews", [])}
+        dated = [(_member_date(rid), rid) for rid in c.get("member_ids", [])]
+        dated.sort(key=lambda t: (t[0] is None, t[0] or datetime.max, t[1]))
+        first_date = next((d for d, _ in dated if d is not None), None)
+
+        for leg, ((d_from, id_from), (d_to, id_to)) in enumerate(zip(dated, dated[1:]), start=1):
+            rf = rec_by_id.get(id_from) or {}
+            rt = rec_by_id.get(id_to) or {}
+            lat_f, lon_f = rf.get("_resolved_lat"), rf.get("_resolved_lon")
+            lat_t, lon_t = rt.get("_resolved_lat"), rt.get("_resolved_lon")
+            leg_km = None
+            if None not in (lat_f, lon_f, lat_t, lon_t):
+                leg_km = round(_haversine_km(lat_f, lon_f, lat_t, lon_t), 2)
+            keyed_edges.append((
+                (first_date is None, first_date or datetime.max, c["cluster_id"], leg),
+                {
+                    "cluster_id": c["cluster_id"],
+                    "cluster_size": c["size"],
+                    "leg_index": leg,
+                    "from_id": id_from,
+                    "to_id": id_to,
+                    "from_date": d_from.isoformat() if d_from else None,
+                    "to_date": d_to.isoformat() if d_to else None,
+                    "from_lat": lat_f, "from_lon": lon_f,
+                    "to_lat": lat_t, "to_lon": lon_t,
+                    "leg_km": leg_km,
+                    "from_is_canonical": id_from == c.get("canonical_id"),
+                    "to_is_canonical": id_to == c.get("canonical_id"),
+                    "from_source_dataset": rf.get("_source_dataset"),
+                    "to_source_dataset": rt.get("_source_dataset"),
+                    "from_canonical_similarity": sim_by_id.get(id_from),
+                    "to_canonical_similarity": sim_by_id.get(id_to),
+                },
+            ))
+
+    keyed_edges.sort(key=lambda t: t[0])
+    return [edge for _, edge in keyed_edges]
+
+
+def build_canonical_distance_points(
+    enriched_records: List[Dict[str, Any]],
+    clusters: List[Dict[str, Any]],
+    id_field: str = "id",
+    date_field: Optional[str] = None,
+    text_cols: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """One point per non-canonical cluster member: its temporal and
+    haversine distance from that cluster's canonical record — every member
+    measured directly against canonical, not against its chronological
+    neighbor (build_cluster_edges' chain only connects adjacent dates, so a
+    5-member cluster has only 4 edges and canonical is directly linked to at
+    most 2 of them; here every member gets exactly one canonical-relative
+    point). Feeds the Stage B spatio-temporal spread chart — how far
+    (in time and distance) does a cluster's supporting evidence sit from the
+    row Stage B picked as its representative."""
+    rec_by_id: Dict[str, Dict[str, Any]] = {}
+    for i, rec in enumerate(enriched_records):
+        rid = str(rec.get(id_field) or rec.get("case_id") or f"ROW-{i + 1}")
+        rec_by_id[rid] = rec
+
+    effective_cols = list(text_cols) if text_cols else DEFAULT_EMBED_COLS
+
+    def _preview(rid: str) -> str:
+        text = _build_row_text(rec_by_id.get(rid) or {}, effective_cols)
+        return text[:220] + ("..." if len(text) > 220 else "")
+
+    points = []
+    for c in clusters:
+        canonical_id = c.get("canonical_id")
+        canon_rec = rec_by_id.get(canonical_id) or {}
+        canon_date = _parse_date(canon_rec.get(date_field)) if date_field else None
+        canon_lat, canon_lon = canon_rec.get("_resolved_lat"), canon_rec.get("_resolved_lon")
+        sim_by_id = {m.get("id"): m.get("canonical_similarity") for m in c.get("member_previews", [])}
+
+        for member_id in c.get("member_ids", []):
+            if member_id == canonical_id:
+                continue
+            rec = rec_by_id.get(member_id) or {}
+            member_date = _parse_date(rec.get(date_field)) if date_field else None
+            temporal_distance_days = (
+                abs((member_date - canon_date).days) if (member_date and canon_date) else None
+            )
+            m_lat, m_lon = rec.get("_resolved_lat"), rec.get("_resolved_lon")
+            haversine_km = None
+            if None not in (m_lat, m_lon, canon_lat, canon_lon):
+                haversine_km = round(_haversine_km(m_lat, m_lon, canon_lat, canon_lon), 2)
+            points.append({
+                "cluster_id": c["cluster_id"],
+                "cluster_size": c["size"],
+                "member_id": member_id,
+                "canonical_id": canonical_id,
+                "temporal_distance_days": temporal_distance_days,
+                "haversine_km": haversine_km,
+                "canonical_similarity": sim_by_id.get(member_id),
+                "member_text": _preview(member_id),
+                "canonical_text": _preview(canonical_id),
+            })
+    return points
+
+
+# Column order for the pairs (Stage A) export CSV — mirrors the Interactive
+# Multi-Gate Audit Trail table in the UI (id_a/id_b/similarity/distance/date
+# diff/witness text/gate flags), plus similarity_bin (Semantic Similarity
+# Bins) and the full untruncated narrative text + resolved date/coords for
+# each side, so a row can be matched back to the source dataset by id or by
+# narrative without carrying every original column along.
+PAIRS_EXPORT_COLUMNS = [
+    "id_a", "id_b", "similarity", "similarity_bin",
+    "haversine_km", "location_name_similarity", "location_source", "date_diff_days",
+    "date_a", "date_b", "lat_a", "lon_a", "lat_b", "lon_b",
+    "is_similar_text", "is_similar_date", "is_similar_location",
+    "is_similar_text_date", "is_similar_both", "is_similar_all",
+    "text_a", "text_b",
+]
+
+
+def build_pairs_export_rows(pairs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Flattens the Stage A pairwise audit trail (run_advanced_dedup's
+    `pairs`, including their nested `flags`) into one row per pair for the
+    pairs_audit_trail.csv export — the full candidate-pair list, not just
+    the subset that made it into a cluster, so a pair like Case-1820 vs
+    Case-1840 is present in the export even if it never reached Stage B."""
+    rows = []
+    for p in pairs:
+        flags = p.get("flags") or {}
+        rows.append({
+            "id_a": p.get("id_a"),
+            "id_b": p.get("id_b"),
+            "similarity": p.get("similarity"),
+            "similarity_bin": p.get("bin"),
+            "haversine_km": p.get("haversine_km"),
+            "location_name_similarity": p.get("location_name_similarity"),
+            "location_source": p.get("location_source"),
+            "date_diff_days": p.get("date_diff_days"),
+            "date_a": p.get("date_a"),
+            "date_b": p.get("date_b"),
+            "lat_a": p.get("lat_a"),
+            "lon_a": p.get("lon_a"),
+            "lat_b": p.get("lat_b"),
+            "lon_b": p.get("lon_b"),
+            "is_similar_text": flags.get("is_similar_text"),
+            "is_similar_date": flags.get("is_similar_date"),
+            "is_similar_location": flags.get("is_similar_location"),
+            "is_similar_text_date": flags.get("is_similar_text_date"),
+            "is_similar_both": flags.get("is_similar_both"),
+            "is_similar_all": flags.get("is_similar_all"),
+            # Full narrative text when present (runs computed after this
+            # field was added); falls back to the 180-char preview for
+            # pairs/zips exported by an older run.
+            "text_a": p.get("text_a", p.get("text_a_preview")),
+            "text_b": p.get("text_b", p.get("text_b_preview")),
+        })
+    return rows
+
+
+def _finalize_clusters(
+    cluster_id_groups: List[List[str]],
+    row_by_id: Dict[str, Dict[str, Any]],
+    preview_cols: Optional[List[str]],
+    effective_cols: List[str],
+    model_name: str,
+    id_prefix: str,
+    date_col: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Turn raw id groups (already filtered to size >= 2) into the
+    cluster/member_preview shape the API returns — canonical selection,
+    each member's cosine similarity to that canonical row (batched into one
+    encode call across every group), and the quick-glance preview values.
+    Shared by Stage B's strict (date+location+text) clusters and the
+    text-only exact-duplicate pass, so "canonical" and "proximity" mean the
+    same thing in both."""
+    canonical_by_idx: Dict[int, str] = {
+        i: sorted(ids, key=lambda rid: (-_row_completeness(row_by_id[rid]), str(rid)))[0]
+        for i, ids in enumerate(cluster_id_groups)
+    }
+
+    canonical_similarity: Dict[str, float] = {}
+    if cluster_id_groups:
+        all_member_ids = [rid for ids in cluster_id_groups for rid in ids]
+        member_texts = [_build_row_text(row_by_id[rid], effective_cols) for rid in all_member_ids]
+        member_vecs = _encode_texts(member_texts, model_name)
+        vec_by_id = {rid: member_vecs[i] for i, rid in enumerate(all_member_ids)}
+        for i, ids in enumerate(cluster_id_groups):
+            canonical_id = canonical_by_idx[i]
+            canonical_vec = vec_by_id[canonical_id]
+            for rid in ids:
+                canonical_similarity[rid] = 1.0 if rid == canonical_id else round(
+                    _cosine_sim(vec_by_id[rid], canonical_vec), 4
+                )
+
+    def _member_preview(rid: str) -> Dict[str, Any]:
+        row = row_by_id.get(rid) or {}
+        if preview_cols:
+            values = {c: row.get(c) for c in preview_cols}
+        else:
+            values = {k: v for k, v in list(row.items())[:8]}
+        for qc in QUICK_GLANCE_COLS:
+            if qc not in values and row.get(qc) not in (None, ""):
+                values[qc] = row.get(qc)
+        preview: Dict[str, Any] = {"id": rid, "values": values}
+        if rid in canonical_similarity:
+            preview["canonical_similarity"] = canonical_similarity[rid]
+        # Resolved date, for the Cluster Preview's "sort chronologically"
+        # button — independent of whether date_col happens to also be one
+        # of the embedding preview_cols.
+        resolved_date = _resolve_date(row, date_col)
+        if resolved_date:
+            preview["date"] = resolved_date.isoformat()
+        return preview
+
+    clusters = []
+    for i, ids in enumerate(cluster_id_groups):
+        sorted_ids = sorted(ids)
+        clusters.append({
+            "cluster_id": f"{id_prefix}-{len(clusters) + 1}",
+            "size": len(ids),
+            "member_ids": sorted_ids,
+            "canonical_id": canonical_by_idx[i],
+            "preview_cols": preview_cols or [],
+            "member_previews": [_member_preview(rid) for rid in sorted_ids],
+        })
+    clusters.sort(key=lambda c: c["size"], reverse=True)
+    return clusters
 
 
 def run_advanced_dedup(
@@ -402,6 +784,7 @@ def run_advanced_dedup(
     lon_col: Optional[str] = None,
     location_col: Optional[str] = None,
     state_col: Optional[str] = None,
+    city_col: Optional[str] = None,
     use_gazetteer: bool = False,
     use_cluster_blocking: bool = False,
     block_min_cluster_size: int = 15,
@@ -444,6 +827,7 @@ def run_advanced_dedup(
         lon_col=lon_col,
         location_col=location_col,
         state_col=state_col,
+        city_col=city_col,
         use_gazetteer=use_gazetteer,
         use_cluster_blocking=use_cluster_blocking,
         block_min_cluster_size=block_min_cluster_size,
@@ -454,50 +838,62 @@ def run_advanced_dedup(
     pairs = stage_a["pairs"]
 
     uf = _UnionFind()
+    # Independent second pass: unions purely on the Easy-Path "exact_duplicate"
+    # text bin (cosine sim >= 0.88), ignoring date/location entirely. Kept as
+    # its own union-find rather than merged into `uf` above — mixing the two
+    # edge sets into one graph would let a single near-identical-but-generic
+    # pair transitively chain together clusters that Stage A's location/date
+    # gates deliberately kept apart. Catches the case where a pair is a
+    # near-certain duplicate by text alone but never reached Stage B because
+    # location couldn't be resolved (or was, and is just wrong/too coarse).
+    text_uf = _UnionFind()
     row_by_id: Dict[str, Dict[str, Any]] = {}
     for p in pairs:
         row_by_id.setdefault(p["id_a"], p.get("row_a") or {})
         row_by_id.setdefault(p["id_b"], p.get("row_b") or {})
         if p["flags"]["is_similar_all"]:
             uf.union(p["id_a"], p["id_b"])
+        if p["bin"] == "exact_duplicate":
+            text_uf.union(p["id_a"], p["id_b"])
 
-    members: Dict[str, List[str]] = {}
-    for node_id in row_by_id:
-        root = uf.find(node_id)
-        members.setdefault(root, []).append(node_id)
+    def _groups(union_find: _UnionFind) -> List[List[str]]:
+        buckets: Dict[str, List[str]] = {}
+        for node_id in row_by_id:
+            buckets.setdefault(union_find.find(node_id), []).append(node_id)
+        return [ids for ids in buckets.values() if len(ids) >= 2]
 
     # Preview columns: the same embedding columns the caller selected (`cols`),
     # so the cluster preview shows exactly what the similarity was computed
     # from for every member — not an arbitrary slice of the canonical row.
     preview_cols = list(cols) if cols else None
+    effective_cols = list(cols) if cols else DEFAULT_EMBED_COLS
 
-    def _member_preview(rid: str) -> Dict[str, Any]:
-        row = row_by_id.get(rid) or {}
-        if preview_cols:
-            values = {c: row.get(c) for c in preview_cols}
-        else:
-            values = {k: v for k, v in list(row.items())[:8]}
-        return {"id": rid, "values": values}
-
-    clusters = []
-    for ids in members.values():
-        if len(ids) < 2:
-            continue
-        sorted_ids = sorted(ids)
-        canonical_id = sorted(ids, key=lambda i: (-_row_completeness(row_by_id[i]), str(i)))[0]
-        clusters.append({
-            "cluster_id": f"CLUSTER-{len(clusters) + 1}",
-            "size": len(ids),
-            "member_ids": sorted_ids,
-            "canonical_id": canonical_id,
-            "preview_cols": preview_cols or [],
-            "member_previews": [_member_preview(rid) for rid in sorted_ids],
-        })
-    clusters.sort(key=lambda c: c["size"], reverse=True)
+    clusters = _finalize_clusters(
+        _groups(uf), row_by_id, preview_cols, effective_cols, model_name, id_prefix="CLUSTER", date_col=date_col,
+    )
+    # Text-exact duplicates: near-certain re-filed duplicates by wording
+    # alone, independent of whether Stage B's stricter gate accepted them.
+    # strong_similar (0.80-0.88) pairs are deliberately *not* auto-merged
+    # here — that band needs a human or LLM to confirm, not a threshold.
+    text_duplicate_clusters = _finalize_clusters(
+        _groups(text_uf), row_by_id, preview_cols, effective_cols, model_name, id_prefix="TEXTDUPE", date_col=date_col,
+    )
 
     total_clusters = len(clusters)
     rows_in_clusters = sum(c["size"] for c in clusters)
     redundant_rows_saved = rows_in_clusters - total_clusters
+
+    text_dup_rows_in_clusters = sum(c["size"] for c in text_duplicate_clusters)
+    text_dup_redundant_rows_saved = text_dup_rows_in_clusters - len(text_duplicate_clusters)
+
+    # Union of both duplicate sets — the actual row count you'd drop by
+    # keeping only the canonical from *both* passes, since a row can be a
+    # duplicate under either criterion independently.
+    duplicate_ids: set = set()
+    for c in clusters:
+        duplicate_ids.update(rid for rid in c["member_ids"] if rid != c["canonical_id"])
+    for c in text_duplicate_clusters:
+        duplicate_ids.update(rid for rid in c["member_ids"] if rid != c["canonical_id"])
 
     return {
         "status": "success",
@@ -513,9 +909,16 @@ def run_advanced_dedup(
             "rows_in_clusters": rows_in_clusters,
             "redundant_rows_saved": redundant_rows_saved,
             "flagged_pairs_count": len(pairs),
+            "text_duplicate_clusters_count": len(text_duplicate_clusters),
+            "text_duplicate_rows_in_clusters": text_dup_rows_in_clusters,
+            "text_duplicate_redundant_rows_saved": text_dup_redundant_rows_saved,
+            "combined_redundant_rows_saved": len(duplicate_ids),
         },
         "pairs": pairs,        # Stage A — full multi-gate audit trail
-        "clusters": clusters,  # Stage B — canonical clustering result
+        "clusters": clusters,  # Stage B — strict (text+date+location) canonical clustering
+        # Text-only exact-duplicate pass (sim >= 0.88, gates ignored) — union
+        # with `clusters`' non-canonical members to get the full prunable set.
+        "text_duplicate_clusters": text_duplicate_clusters,
     }
 
 
@@ -536,6 +939,17 @@ def run_cross_db_pipeline(
     lon_col: Optional[str] = None,
     location_col: Optional[str] = None,
     state_col: Optional[str] = None,
+    city_col: Optional[str] = None,
+    # Dataset B's own column names, for between_datasets comparisons where
+    # the two databases don't share a schema. Each defaults to the Dataset A
+    # value above when not given, so single-schema callers (including every
+    # within_dataset call) need to specify column names only once.
+    date_col_b: Optional[str] = None,
+    lat_col_b: Optional[str] = None,
+    lon_col_b: Optional[str] = None,
+    location_col_b: Optional[str] = None,
+    state_col_b: Optional[str] = None,
+    city_col_b: Optional[str] = None,
     location_name_threshold: float = 0.75,
     use_gazetteer: bool = False,
     use_cluster_blocking: bool = False,
@@ -553,11 +967,15 @@ def run_cross_db_pipeline(
     already match them. When numeric coordinates don't resolve for a row,
     the location gate falls back through two more tiers, in order:
       1. (opt-in, use_gazetteer=True) an offline US Census Gazetteer
-         city/state -> centroid lookup (location_col, optionally paired
-         with state_col — or a "City, ST" string in location_col alone),
-         giving a real haversine distance. Off by default — it's US-only
-         and a place name can collide across states/countries, so it
-         shouldn't silently activate for every location-name dataset.
+         city/state -> centroid lookup. Prefers a dedicated city_col (+
+         state_col) when given — a clean, already-separated city name is a
+         far more reliable gazetteer key than one parsed out of a free-text
+         location_col sentence. Falls back to location_col (paired with
+         state_col, or a parsed "City, ST" string in location_col alone)
+         when city_col isn't given or doesn't resolve. Gives a real
+         haversine distance. Off by default — it's US-only and a place name
+         can collide across states/countries, so it shouldn't silently
+         activate for every location-name dataset.
       2. text similarity on location_col, if the gazetteer is off or
          doesn't resolve.
 
@@ -574,29 +992,27 @@ def run_cross_db_pipeline(
     """
     if not records_a:
         return {"status": "error", "message": "No candidate records provided for Dataset A."}
-        
+
     mode = "between_datasets" if (records_b is not None and len(records_b) > 0) else "within_dataset"
     if mode == "within_dataset":
         records_b = records_a
         cols_b = cols_a
-        
-    cols_a = cols_a or ["witness.notes", "description", "case_text.text", "narrative", "text"]
+        date_col_b = date_col
+        lat_col_b = lat_col
+        lon_col_b = lon_col
+        location_col_b = location_col
+        state_col_b = state_col
+        city_col_b = city_col
+    else:
+        date_col_b = date_col_b if date_col_b is not None else date_col
+        lat_col_b = lat_col_b if lat_col_b is not None else lat_col
+        lon_col_b = lon_col_b if lon_col_b is not None else lon_col
+        location_col_b = location_col_b if location_col_b is not None else location_col
+        state_col_b = state_col_b if state_col_b is not None else state_col
+        city_col_b = city_col_b if city_col_b is not None else city_col
+
+    cols_a = cols_a or DEFAULT_EMBED_COLS
     cols_b = cols_b or cols_a
-    
-    def _build_text(rec: Dict[str, Any], cols: List[str]) -> str:
-        parts = []
-        for c in cols:
-            v = str(rec.get(c, "")).strip()
-            if v and v.lower() not in ("nan", "none", "null"):
-                parts.append(v)
-        if not parts:
-            # Fallback to any narrative text
-            for fallback in ("narrative", "text", "description", "witness.notes"):
-                v = str(rec.get(fallback, "")).strip()
-                if v and v.lower() not in ("nan", "none", "null"):
-                    parts.append(v)
-                    break
-        return " - ".join(parts) if parts else "Unknown Report"
 
     # No implicit truncation — every row the caller provides is evaluated.
     # Pass max_rows explicitly if you want to cap it (e.g. for a UI preview).
@@ -606,14 +1022,15 @@ def run_cross_db_pipeline(
     # Resolve each row's coordinates once (not once per pair) — with top_k
     # candidates per row, a row can appear in many pairs, and both the
     # gazetteer dict lookup and the "City, ST" text parse are wasted work
-    # if repeated per pair rather than cached per row up front.
-    coords_a = [_resolve_effective_coord(r, lat_col, lon_col, location_col, state_col, use_gazetteer) for r in eval_a]
+    # if repeated per pair rather than cached per row up front. Dataset B
+    # uses its own column mapping (identical to A's in within_dataset mode).
+    coords_a = [_resolve_effective_coord(r, lat_col, lon_col, location_col, state_col, use_gazetteer, city_col) for r in eval_a]
     coords_b = coords_a if mode == "within_dataset" else [
-        _resolve_effective_coord(r, lat_col, lon_col, location_col, state_col, use_gazetteer) for r in eval_b
+        _resolve_effective_coord(r, lat_col_b, lon_col_b, location_col_b, state_col_b, use_gazetteer, city_col_b) for r in eval_b
     ]
 
-    texts_a = [_build_text(r, cols_a) for r in eval_a]
-    texts_b = [_build_text(r, cols_b) for r in eval_b] if mode == "between_datasets" else texts_a
+    texts_a = [_build_row_text(r, cols_a) for r in eval_a]
+    texts_b = [_build_row_text(r, cols_b) for r in eval_b] if mode == "between_datasets" else texts_a
 
     # Encode in one batched call per side (was one-row-at-a-time — didn't
     # scale once the 500-row cap was lifted).
@@ -714,14 +1131,17 @@ def run_cross_db_pipeline(
                 (lat_a, lon_a), location_source = resolved_a
                 (lat_b, lon_b), _ = resolved_b
                 haversine_km = round(_haversine_km(lat_a, lon_a, lat_b, lon_b), 2)
-            elif location_col:
-                location_name_sim = _location_name_similarity(rec_a.get(location_col), rec_b.get(location_col))
+            elif location_col or location_col_b:
+                location_name_sim = _location_name_similarity(
+                    rec_a.get(location_col) if location_col else None,
+                    rec_b.get(location_col_b) if location_col_b else None,
+                )
                 location_source = "name_text" if location_name_sim is not None else None
 
-            # Date difference calculation — explicit date_col when given.
+            # Date difference calculation — explicit date_col (per side) when given.
             date_diff_days = None
             da = _resolve_date(rec_a, date_col)
-            db = _resolve_date(rec_b, date_col)
+            db = _resolve_date(rec_b, date_col_b)
             if da and db:
                 date_diff_days = abs((da - db).days)
 
@@ -757,8 +1177,20 @@ def run_cross_db_pipeline(
                 # centroid lookup), 'name_text' (fuzzy string match), or None.
                 "location_source": location_source,
                 "date_diff_days": date_diff_days,
+                # Full (untruncated) narrative text — the *_preview fields
+                # above are clipped to 180 chars for the UI table, but a
+                # pairs export needs the complete text so it can be matched
+                # back against the source dataset by ID or by narrative.
+                "text_a": texts_a[i],
+                "text_b": texts_b[j],
                 "text_a_preview": texts_a[i][:180] + ("..." if len(texts_a[i]) > 180 else ""),
                 "text_b_preview": texts_b[j][:180] + ("..." if len(texts_b[j]) > 180 else ""),
+                "date_a": da.isoformat() if da else None,
+                "date_b": db.isoformat() if db else None,
+                "lat_a": resolved_a[0][0] if resolved_a else None,
+                "lon_a": resolved_a[0][1] if resolved_a else None,
+                "lat_b": resolved_b[0][0] if resolved_b else None,
+                "lon_b": resolved_b[0][1] if resolved_b else None,
                 "row_a": rec_a,
                 "row_b": rec_b,
                 "flags": {
